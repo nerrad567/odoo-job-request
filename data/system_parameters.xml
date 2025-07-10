@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="0">
+        <!-- Hetzner Access Key ID -->
+        <record id="hetzner_access_key_id" model="ir.config_parameter">
+            <field name="key">hetzner_access_key_id</field>
+            <field name="value">USLB49Z13NBCXY6S5GIR</field>
+        </record>
+        <!-- Hetzner Secret Access Key -->
+        <record id="hetzner_secret_access_key" model="ir.config_parameter">
+            <field name="key">hetzner_secret_access_key</field>
+            <field name="value">DNzyIDdBV2Prpzy5qCzDC1palu7AEpY2sK6xJk0n</field>
+        </record>
+        <!-- Hetzner Bucket Name -->
+        <record id="hetzner_bucket" model="ir.config_parameter">
+            <field name="key">hetzner_bucket</field>
+            <field name="value">electrical-job-portal-fsn1</field>
+        </record>
+        <!-- Hetzner Region -->
+        <record id="hetzner_region" model="ir.config_parameter">
+            <field name="key">hetzner_region</field>
+            <field name="value">fsn1</field>
+        </record>
+    </data>
+</odoo>

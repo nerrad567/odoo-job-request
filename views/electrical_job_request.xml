@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- Form View for Electrical Job Request -->
+    <record id="view_electrical_job_request_form" model="ir.ui.view">
+        <field name="name">electrical.job.request.form</field>
+        <field name="model">electrical.job.request</field>
+        <field name="arch" type="xml">
+            <form string="Electrical Job Request">
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="email"/>
+                        <field name="phone"/>
+                        <field name="job_type"/>
+                        <field name="customer_notes"/>
+                        <field name="crm_lead_id" domain="[('type', '=', 'lead')]"/>
+                    </group>
+                    <notebook>
+                        <page string="General Details" invisible="job_type != 'new_socket'">
+                            <group>
+                                <field name="property_type"/>
+                                <field name="property_age"/>
+                                <field name="foundation_type"/>
+                                <field name="attic_access"/>
+                                <field name="panel_type"/>
+                                <field name="recent_upgrades"/>
+                                <field name="fuse_board_attachment_id" widget="image"/>
+                            </group>
+                            <group string="Bonding">
+                                <field name="water_bond"/>
+                                <field name="water_bond_location" invisible="water_bond != 'yes'"/>
+                                <field name="water_bond_attachment_id" widget="image" invisible="water_bond != 'yes'"/>
+                                <field name="gas_bond"/>
+                                <field name="gas_bond_location" invisible="gas_bond != 'yes'"/>
+                                <field name="gas_bond_attachment_id" widget="image" invisible="gas_bond != 'yes'"/>
+                                <field name="oil_bond"/>
+                                <field name="oil_bond_location" invisible="oil_bond != 'yes'"/>
+                                <field name="oil_bond_attachment_id" widget="image" invisible="oil_bond != 'yes'"/>
+                                <field name="other_services"/>
+                                <field name="other_services_desc" invisible="other_services != 'yes'"/>
+                                <field name="other_services_attachment_id" widget="image" invisible="other_services != 'yes'"/>
+                            </group>
+                        </page>
+                        <page string="Socket Details" invisible="job_type != 'new_socket'">
+                            <field name="socket_lines" nolabel="1" context="{'list_view_ref': 'electrical_job_request.view_electrical_socket_line_list', 'form_view_ref': 'electrical_job_request.view_electrical_socket_line_form'}"/>
+                        </page>
+                        <page string="Attachments">
+                            <field name="attachments" widget="many2many_binary_multi_files" nolabel="1"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- List View for Electrical Socket Line (separate record) -->
+    <record id="view_electrical_socket_line_list" model="ir.ui.view">
+        <field name="name">electrical.socket.line.list</field>
+        <field name="model">electrical.socket.line</field>
+        <field name="arch" type="xml">
+            <list editable="bottom">
+                <field name="room_name"/>
+                <field name="socket_style"/>
+                <field name="height_from_floor"/>
+                <field name="mount_type"/>
+                <field name="flooring_type"/>
+                <field name="flooring_other" invisible="flooring_type != 'other'"/>
+                <field name="wall_type"/>
+                <field name="gangs"/>
+                <field name="socket_comments"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Form View for Electrical Socket Line (separate record) -->
+    <record id="view_electrical_socket_line_form" model="ir.ui.view">
+        <field name="name">electrical.socket.line.form</field>
+        <field name="model">electrical.socket.line</field>
+        <field name="arch" type="xml">
+            <form>
+                <group>
+                    <field name="room_name"/>
+                    <field name="socket_style"/>
+                    <field name="height_from_floor"/>
+                    <field name="mount_type"/>
+                    <field name="flooring_type"/>
+                    <field name="flooring_other" invisible="flooring_type != 'other'"/>
+                    <field name="wall_type"/>
+                    <field name="gangs"/>
+                    <field name="socket_comments"/>
+                </group>
+                <notebook>
+                    <page string="Location Attachments">
+                        <field name="location_attachments" widget="many2many_binary_multi_files"/>
+                    </page>
+                    <page string="Route Attachments">
+                        <field name="route_attachments" widget="many2many_binary_multi_files"/>
+                    </page>
+                </notebook>
+            </form>
+        </field>
+    </record>
+
+    <!-- List View for Electrical Job Request -->
+    <record id="view_electrical_job_request_tree" model="ir.ui.view">
+        <field name="name">electrical.job.request.list</field>
+        <field name="model">electrical.job.request</field>
+        <field name="arch" type="xml">
+            <list string="Electrical Job Requests">
+                <field name="name"/>
+                <field name="email"/>
+                <field name="phone"/>
+                <field name="job_type"/>
+                <field name="crm_lead_id"/>
+            </list>
+        </field>
+    </record>
+
+    <!-- Action for Electrical Job Request -->
+    <record id="action_electrical_job_request" model="ir.actions.act_window">
+        <field name="name">Electrical Job Requests</field>
+        <field name="res_model">electrical.job.request</field>
+        <field name="view_mode">list,form</field>
+        <field name="view_id" ref="view_electrical_job_request_tree"/>
+    </record>
+
+    <!-- Menu Item -->
+    <menuitem id="menu_electrical_job_request"
+              name="Job Requests"
+              parent="crm.crm_menu_root"
+              action="action_electrical_job_request"
+              sequence="10"/>
+
+    <!-- Public Form Template -->
+    <template id="job_request_form" name="Electrical Job Request Form">
+        <t t-call="website.layout">
+            <div class="container mt-4">
+                <div id="job_request_form"/>
+            </div>
+        </t>
+    </template>
+
+    <!-- Thank-You Page Template -->
+    <template id="job_request_thank_you" name="Job Request Thank You">
+        <t t-call="website.layout">
+            <div class="container mt-4">
+                <h1>Thank You!</h1>
+                <p>Your electrical job request has been submitted successfully.</p>
+                <a href="/job-request" class="btn btn-primary">Submit Another Request</a>
+            </div>
+        </t>
+    </template>
+</odoo>
