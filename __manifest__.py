@@ -13,10 +13,13 @@
         "security/ir.model.access.csv",
         "security/ir_rule.xml",
         "views/electrical_job_request.xml",
-        "data/system_parameters.xml",
+        # "data/system_parameters.xml",
     ],
     "assets": {
         "web.assets_frontend": [
+            "electrical_job_request/static/src/js/validation_utils.js",
+            "electrical_job_request/static/src/js/file_utils.js",
+            "electrical_job_request/static/src/js/form_steps.js",            
             "electrical_job_request/static/src/js/job_request_form.js",
         ],
     },

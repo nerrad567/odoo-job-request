@@ -20,7 +20,7 @@
                             <group>
                                 <field name="property_type"/>
                                 <field name="property_age"/>
-                                <field name="foundation_type"/>
+                                <!-- <field name="foundation_type"/> -->
                                 <field name="attic_access"/>
                                 <field name="panel_type"/>
                                 <field name="recent_upgrades"/>

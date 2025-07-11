@@ -96,7 +96,7 @@ class JobRequestController(http.Controller):
                 'crm_lead_id': lead.id,
                 'property_type': data.get('property_type'),
                 'property_age': data.get('property_age'),
-                'foundation_type': data.get('foundation_type'),
+                # 'foundation_type': data.get('foundation_type'),
                 'attic_access': data.get('attic_access'),
                 'panel_type': data.get('panel_type'),
                 'recent_upgrades': data.get('recent_upgrades'),

@@ -35,11 +35,6 @@ class ElectricalJobRequest(models.Model):
         ('post1980', 'After 1980'),
         ('unknown', 'Not Sure'),
     ], string='Property Age', required=True)
-    foundation_type = fields.Selection([
-        ('slab', 'Slab (no crawlspace)'),
-        ('crawl', 'Crawlspace'),
-        ('other', 'Other/Not Sure'),
-    ], string='Foundation Type')
     attic_access = fields.Selection([
         ('yes', 'Yes'),
         ('no', 'No'),
