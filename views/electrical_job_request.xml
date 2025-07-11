@@ -8,15 +8,16 @@
             <form string="Electrical Job Request">
                 <sheet>
                     <group>
-                        <field name="name"/>
+                        <field name="first_name"/>
                         <field name="email"/>
-                        <field name="phone"/>
+                        <field name="mobile"/>
+                        <field name="postcode"/>
                         <field name="job_type"/>
                         <field name="customer_notes"/>
                         <field name="crm_lead_id" domain="[('type', '=', 'lead')]"/>
                     </group>
                     <notebook>
-                        <page string="General Details" invisible="job_type != 'new_socket'">
+                        <page string="General Details" invisible="job_type not in ['new_socket', 'additional_circuit', 'outbuilding_power', 'ev_charger', 'full_rewire', 'partial_rewire', 'dado_trunking', 'industrial_rewire', 'minor_works', 'structured_cabling', 'ethernet_point']">
                             <group>
                                 <field name="property_type"/>
                                 <field name="property_age"/>
@@ -41,7 +42,7 @@
                                 <field name="other_services_attachment_id" widget="image" invisible="other_services != 'yes'"/>
                             </group>
                         </page>
-                        <page string="Socket Details" invisible="job_type != 'new_socket'">
+                        <page string="Socket Details" invisible="job_type not in ['new_socket', 'additional_circuit', 'outbuilding_power', 'ev_charger', 'full_rewire', 'partial_rewire', 'dado_trunking', 'industrial_rewire', 'minor_works', 'structured_cabling', 'ethernet_point']">
                             <field name="socket_lines" nolabel="1" context="{'list_view_ref': 'electrical_job_request.view_electrical_socket_line_list', 'form_view_ref': 'electrical_job_request.view_electrical_socket_line_form'}"/>
                         </page>
                         <page string="Attachments">
@@ -107,9 +108,10 @@
         <field name="model">electrical.job.request</field>
         <field name="arch" type="xml">
             <list string="Electrical Job Requests">
-                <field name="name"/>
+                <field name="first_name"/>
                 <field name="email"/>
-                <field name="phone"/>
+                <field name="mobile"/>
+                <field name="postcode"/>
                 <field name="job_type"/>
                 <field name="crm_lead_id"/>
             </list>
@@ -134,6 +136,27 @@
     <!-- Public Form Template -->
     <template id="job_request_form" name="Electrical Job Request Form">
         <t t-call="website.layout">
+            <style>
+                .job-type-card {
+                    cursor: pointer;
+                    transition: all 0.3s ease;
+                    border: 1px solid #dee2e6;
+                }
+                .job-type-card:hover {
+                    background-color: #f8f9fa;
+                    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+                }
+                .job-type-card.active {
+                    border-color: #343a40;
+                    border-width: 3px;
+                }
+                .job-type-card.active .check-icon {
+                    position: absolute;
+                    top: 10px;
+                    right: 10px;
+                    color: #343a40;
+                }
+            </style>
             <div class="container mt-4">
                 <div id="job_request_form"/>
             </div>

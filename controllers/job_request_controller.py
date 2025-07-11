@@ -5,6 +5,7 @@ import boto3
 from botocore.exceptions import ClientError
 from botocore.client import Config
 import uuid
+from datetime import datetime
 
 _logger = logging.getLogger(__name__)
 
@@ -66,21 +67,22 @@ class JobRequestController(http.Controller):
     def job_request_submit(self, **data):
         """Handle form submission (JSON POST). Attachments are metadata only."""
         try:
-            name = data.get('name', '').strip()
+            first_name = data.get('first_name', '').strip()
             email = data.get('email', '').strip()
-            phone = data.get('phone', '').strip()
+            mobile = data.get('mobile', '').strip()
+            postcode = data.get('postcode', '').strip()
             job_type = data.get('job_type', '')
             customer_notes = data.get('customer_notes', '')
 
-            if not name or not email or not job_type:
-                return {'status': 'error', 'message': 'Missing required fields: name, email, job type.'}
+            if not first_name or not email or not job_type:
+                return {'status': 'error', 'message': 'Missing required fields: first_name, email, job type.'}
 
             # Create CRM Lead
             lead_vals = {
-                'name': f"Electrical Job Request - {name}",
-                'partner_name': name,
+                'name': f"Electrical Job Request - {first_name}",
+                'partner_name': first_name,
                 'email_from': email,
-                'phone': phone,
+                'phone': mobile,
                 'description': customer_notes,
                 'type': 'lead',
             }
@@ -88,15 +90,15 @@ class JobRequestController(http.Controller):
 
             # Prepare Job Request vals including socket_lines create commands
             job_request_vals = {
-                'name': name,
+                'first_name': first_name,
                 'email': email,
-                'phone': phone,
+                'mobile': mobile,
+                'postcode': postcode,
                 'job_type': job_type,
                 'customer_notes': customer_notes,
                 'crm_lead_id': lead.id,
                 'property_type': data.get('property_type'),
                 'property_age': data.get('property_age'),
-                # 'foundation_type': data.get('foundation_type'),
                 'attic_access': data.get('attic_access'),
                 'panel_type': data.get('panel_type'),
                 'recent_upgrades': data.get('recent_upgrades'),
@@ -109,6 +111,49 @@ class JobRequestController(http.Controller):
                 'other_services': data.get('other_services'),
                 'other_services_desc': data.get('other_services_desc') if data.get('other_services') == 'yes' else False,
             }
+
+            # Add placeholder fields that exist in the model
+            job_request_vals.update({
+                'socket_quantity': int(data.get('socket_quantity') or 0),
+                'appliance_type': data.get('appliance_type'),
+                'outbuilding_type': data.get('outbuilding_type'),
+                'ev_power_rating': data.get('ev_power_rating'),
+                'light_location': data.get('light_location'),
+                'downlights_count': int(data.get('downlights_count') or 0),
+                'smart_compatibility': data.get('smart_compatibility'),
+                'motion_sensor': data.get('motion_sensor'),
+                'dimmer_count': int(data.get('dimmer_count') or 0),
+                'current_unit_type': data.get('current_unit_type'),
+                'rccb_circuit': data.get('rccb_circuit'),
+                'surge_scope': data.get('surge_scope'),
+                'property_size': data.get('property_size'),
+                'alarms_count': int(data.get('alarms_count') or 0),
+                'bonding_status': data.get('bonding_status'),
+                'last_test_date': data.get('last_test_date') if data.get('last_test_date') else False,
+                'emergency_type': data.get('emergency_type'),
+                'rooms_count': int(data.get('rooms_count') or 0),
+                'partial_rooms': data.get('partial_rooms'),
+                'trunking_length': float(data.get('trunking_length') or 0.0),
+                'facility_size': data.get('facility_size'),
+                'minor_description': data.get('minor_description'),
+                'fault_symptoms': data.get('fault_symptoms'),
+                'cable_type': data.get('cable_type'),
+                'ethernet_points': int(data.get('ethernet_points') or 0),
+                'coverage_area': data.get('coverage_area'),
+                'shower_power': data.get('shower_power'),
+                'heating_area': float(data.get('heating_area') or 0.0),
+                'thermostat_type': data.get('thermostat_type'),
+                'integration_platform': data.get('integration_platform'),
+                'hub_brand': data.get('hub_brand'),
+                'knx_devices': int(data.get('knx_devices') or 0),
+                'panel_location': data.get('panel_location'),
+                'doors_count': int(data.get('doors_count') or 0),
+                'cameras_count': int(data.get('cameras_count') or 0),
+                'gate_type': data.get('gate_type'),
+                'lighting_bonding': data.get('lighting_bonding'),
+                'smart_systems': data.get('smart_systems'),
+                'ceiling_type': data.get('ceiling_type'),
+            })
 
             socket_lines_cmds = []
             if job_type == 'new_socket' and data.get('socket_lines'):
@@ -161,14 +206,26 @@ class JobRequestController(http.Controller):
             # Handle per-socket attachments (now that socket_lines have IDs)
             for idx, socket_line in enumerate(job_request.socket_lines):
                 line_data = data.get('socket_lines', [])[idx]
+                location_ids = []
                 for att in line_data.get('location_attachments', []):
-                    self._create_attachment(att, 'electrical.socket.line', socket_line.id, 'location_attachments')
+                    att_id = self._create_attachment(att, 'electrical.socket.line', socket_line.id)
+                    location_ids.append(att_id)
+                if location_ids:
+                    socket_line.sudo().write({'location_attachments': [(6, 0, location_ids)]})
+                route_ids = []
                 for att in line_data.get('route_attachments', []):
-                    self._create_attachment(att, 'electrical.socket.line', socket_line.id, 'route_attachments')
+                    att_id = self._create_attachment(att, 'electrical.socket.line', socket_line.id)
+                    route_ids.append(att_id)
+                if route_ids:
+                    socket_line.sudo().write({'route_attachments': [(6, 0, route_ids)]})
 
             # Handle general attachments
+            attachment_ids = []
             for att in data.get('attachments', []):
-                self._create_attachment(att, 'electrical.job.request', job_request.id)
+                att_id = self._create_attachment(att, 'electrical.job.request', job_request.id)
+                attachment_ids.append(att_id)
+            if attachment_ids:
+                job_request.sudo().write({'attachments': [(6, 0, attachment_ids)]})
 
             return {'status': 'success', 'message': 'Job request submitted successfully.'}
         except Exception as e:

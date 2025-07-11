@@ -14,9 +14,10 @@ odoo.define('electrical_job_request.job_request_form', ['@odoo/owl', '@web/core/
             this.state = useState({
                 current_step: 1,
                 total_steps: 1,
-                name: '',
+                first_name: '',
                 email: '',
-                phone: '',
+                mobile: '',
+                postcode: '',
                 job_type: '',
                 customer_notes: '',
                 socket_lines: [],
@@ -26,7 +27,6 @@ odoo.define('electrical_job_request.job_request_form', ['@odoo/owl', '@web/core/
                 messageType: '',
                 property_type: '',
                 property_age: '',
-                foundation_type: '',
                 attic_access: '',
                 panel_type: '',
                 recent_upgrades: '',
@@ -43,7 +43,71 @@ odoo.define('electrical_job_request.job_request_form', ['@odoo/owl', '@web/core/
                 other_services: '',
                 other_services_desc: '',
                 other_services_attachment: null,
+                num_sockets: 1, // Default for new_socket prepopulation
                 uploadProgress: 0,
+                errors: {
+                    first_name: '',
+                    email: '',
+                    mobile: '',
+                    postcode: '',
+                    job_type: '',
+                    fuse_board: '',
+                    num_sockets: '',
+                    // Add more for other required fields
+                },
+                activeCategory: null, // To remember open accordion category
+                // Placeholder fields for other job types
+                ev_power_level: '',
+                ev_location: '',
+                light_type: '',
+                light_quantity: '',
+                consumer_unit_type: '',
+                safety_report_type: '',
+                rewire_scope: '',
+                rewire_rooms: '',
+                cabling_length: '',
+                network_speed: '',
+                heating_system_type: '',
+                smart_integration_type: '',
+                socket_quantity: '',
+                appliance_type: '',
+                outbuilding_type: '',
+                ev_power_rating: '',
+                light_location: '',
+                downlights_count: '',
+                smart_compatibility: '',
+                motion_sensor: '',
+                dimmer_count: '',
+                current_unit_type: '',
+                rccb_circuit: '',
+                surge_scope: '',
+                property_size: '',
+                alarms_count: '',
+                bonding_status: '',
+                last_test_date: '',
+                emergency_type: '',
+                rooms_count: '',
+                partial_rooms: '',
+                trunking_length: '',
+                facility_size: '',
+                minor_description: '',
+                fault_symptoms: '',
+                cable_type: '',
+                ethernet_points: '',
+                coverage_area: '',
+                shower_power: '',
+                heating_area: '',
+                thermostat_type: '',
+                integration_platform: '',
+                hub_brand: '',
+                knx_devices: '',
+                panel_location: '',
+                doors_count: '',
+                cameras_count: '',
+                gate_type: '',
+                lighting_bonding: '',
+                smart_systems: '',
+                ceiling_type: '',
             });
             this.formRef = useRef('form');
 
@@ -52,18 +116,181 @@ odoo.define('electrical_job_request.job_request_form', ['@odoo/owl', '@web/core/
             });
         }
 
-        updateJobType(ev) {
-            this.state.job_type = ev.target.value;
+        get categories() {
+            return [
+                {
+                    value: 'power_sockets',
+                    label: 'Power & Sockets',
+                    icon: 'fa-bolt',
+                    jobs: [
+                        { value: 'new_socket', label: 'New Socket Installation', icon: 'fa-plug' },
+                        { value: 'additional_circuit', label: 'Additional Circuit Installation', icon: 'fa-sitemap' },
+                        { value: 'outbuilding_power', label: 'Outbuilding Power Supply', icon: 'fa-building-o' },
+                        { value: 'ev_charger', label: 'EV Charger Installation', icon: 'fa-car' },
+                    ]
+                },
+                {
+                    value: 'lighting_controls',
+                    label: 'Lighting & Controls',
+                    icon: 'fa-lightbulb-o',
+                    jobs: [
+                        { value: 'new_light', label: 'New Light Installation', icon: 'fa-lightbulb-o' },
+                        { value: 'downlights', label: 'Downlights / Spotlights', icon: 'fa-dot-circle-o' },
+                        { value: 'smart_lighting', label: 'Smart Lighting Systems', icon: 'fa-toggle-on' },
+                        { value: 'outdoor_lighting', label: 'Outdoor & Security Lighting', icon: 'fa-tree' },
+                        { value: 'dimmer_install', label: 'Dimmer Switch Installation', icon: 'fa-sliders' },
+                    ]
+                },
+                {
+                    value: 'consumer_unit_safety',
+                    label: 'Consumer Unit & Safety',
+                    icon: 'fa-shield',
+                    jobs: [
+                        { value: 'consumer_unit', label: 'Consumer Unit / Fusebox Upgrade', icon: 'fa-power-off' },
+                        { value: 'rccb_install', label: 'RCD / RCBO Installation', icon: 'fa-shield' },
+                        { value: 'surge_protection', label: 'Surge Protection Devices', icon: 'fa-bolt' },
+                        { value: 'eicr', label: 'EICR / Safety Report', icon: 'fa-file-text-o' },
+                        { value: 'smoke_alarms', label: 'Smoke & Heat Alarm Installation', icon: 'fa-fire-extinguisher' },
+                        { value: 'earthing_bonding', label: 'Main Earthing & Bonding', icon: 'fa-link' },
+                        { value: 'fixed_wire_testing', label: 'Fixed Wire Testing', icon: 'fa-wrench' },
+                        { value: 'emergency_lighting', label: 'Emergency Lighting', icon: 'fa-lightbulb-o' },
+                    ]
+                },
+                {
+                    value: 'rewires_small_works',
+                    label: 'Rewires & Small Works',
+                    icon: 'fa-wrench',
+                    jobs: [
+                        { value: 'full_rewire', label: 'Full Rewire', icon: 'fa-home' },
+                        { value: 'partial_rewire', label: 'Partial Rewire', icon: 'fa-pencil' },
+                        { value: 'dado_trunking', label: 'Dado Trunking', icon: 'fa-columns' },
+                        { value: 'industrial_rewire', label: 'Industrial & Commercial Rewire', icon: 'fa-industry' },
+                        { value: 'minor_works', label: 'Minor Electrical Works', icon: 'fa-tasks' },
+                        { value: 'fault_finding', label: 'Fault Finding & Troubleshooting', icon: 'fa-search' },
+                    ]
+                },
+                {
+                    value: 'cabling_networking',
+                    label: 'Cabling & Networking',
+                    icon: 'fa-sitemap',
+                    jobs: [
+                        { value: 'structured_cabling', label: 'Structured & Data Cabling', icon: 'fa-sitemap' },
+                        { value: 'ethernet_point', label: 'Ethernet Point Installation', icon: 'fa-plug' },
+                        { value: 'wifi_booster', label: 'Wi-Fi Extender / Mesh Node', icon: 'fa-wifi' },
+                    ]
+                },
+                {
+                    value: 'heating_hot_water',
+                    label: 'Heating & Hot Water',
+                    icon: 'fa-thermometer',
+                    jobs: [
+                        { value: 'electric_shower', label: 'Electric Shower Installation', icon: 'fa-shower' },
+                        { value: 'underfloor_heating', label: 'Underfloor Heating Wiring', icon: 'fa-thermometer' },
+                        { value: 'heating_controls', label: 'Heating System Controls Installation', icon: 'fa-sliders' },
+                        { value: 'smart_heating_controls', label: 'Smart Heating Controls Integration', icon: 'fa-mobile' },
+                    ]
+                },
+                {
+                    value: 'smart_home_building_controls',
+                    label: 'Smart Home & Building Controls',
+                    icon: 'fa-home',
+                    jobs: [
+                        { value: 'smart_hub', label: 'Smart Home Hub Integration', icon: 'fa-home' },
+                        { value: 'knx_system', label: 'KNX Automation System', icon: 'fa-cogs' },
+                        { value: 'home_automation_panel', label: 'Automation Control Panel', icon: 'fa-tachometer' },
+                        { value: 'access_control', label: 'Access Control & Door Entry', icon: 'fa-key' },
+                        { value: 'cctv', label: 'CCTV & Security Systems', icon: 'fa-video-camera' },
+                        { value: 'automated_gates', label: 'Automated Gates & Barriers', icon: 'fa-road' },
+                    ]
+                },
+            ];
+        }
+
+        getCategoryOfJob(jobType) {
+            for (let cat of this.categories) {
+                if (cat.jobs.some(j => j.value === jobType)) {
+                    return cat.value;
+                }
+            }
+            return null;
+        }
+
+        toggleCategory(value) {
+            this.state.activeCategory = this.state.activeCategory === value ? null : value;
+        }
+
+        selectJobType(value) {
+            this.state.job_type = value;
+            this.state.errors.job_type = '';
+            this.state.activeCategory = this.getCategoryOfJob(value);
             this.updateTotalSteps();
+            if (value === 'new_socket') {
+                this.prepopulateSockets();
+            }
+        }
+
+        getTotalStepsForJob(jobType) {
+            const stepCounts = {
+                // Power & Sockets
+                'new_socket': 5, // Basic, Bonding, Fuse Board, Socket Details, Notes
+                'additional_circuit': 5,
+                'outbuilding_power': 5,
+                'ev_charger': 4, // Basic, Bonding, Fuse Board, Notes
+                // Lighting & Controls
+                'new_light': 4,
+                'downlights': 4,
+                'smart_lighting': 4,
+                'outdoor_lighting': 4,
+                'dimmer_install': 4,
+                // Consumer Unit & Safety
+                'consumer_unit': 3,
+                'rccb_install': 3,
+                'surge_protection': 3,
+                'eicr': 3,
+                'smoke_alarms': 3,
+                'earthing_bonding': 3,
+                'fixed_wire_testing': 3,
+                'emergency_lighting': 3,
+                // Rewires & Small Works
+                'full_rewire': 5,
+                'partial_rewire': 5,
+                'dado_trunking': 5,
+                'industrial_rewire': 5,
+                'minor_works': 5,
+                'fault_finding': 5,
+                // Cabling & Networking
+                'structured_cabling': 4,
+                'ethernet_point': 4,
+                'wifi_booster': 4,
+                // Heating & Hot Water
+                'electric_shower': 4,
+                'underfloor_heating': 4,
+                'heating_controls': 4,
+                'smart_heating_controls': 4,
+                // Smart Home & Building Controls
+                'smart_hub': 3,
+                'knx_system': 3,
+                'home_automation_panel': 3,
+                'access_control': 3,
+                'cctv': 3,
+                'automated_gates': 3,
+            };
+            return stepCounts[jobType] || 2; // Default to Basic + Notes
         }
 
         updateTotalSteps() {
-            if (this.state.job_type === 'new_socket') {
-                this.state.total_steps = 5; // Basic, General, Bonding, Sockets, Notes/Attach
-            } else if (this.state.job_type) {
-                this.state.total_steps = 2; // Basic, Notes/Attach for other types
+            if (this.state.job_type) {
+                this.state.total_steps = this.getTotalStepsForJob(this.state.job_type);
             } else {
-                this.state.total_steps = 1; // Only Basic if no job_type
+                this.state.total_steps = 1;
+            }
+        }
+
+        prepopulateSockets() {
+            this.state.socket_lines = [];
+            const num = parseInt(this.state.num_sockets) || 1;
+            for (let i = 0; i < num; i++) {
+                this.addSocketLine();
             }
         }
 
@@ -72,16 +299,123 @@ odoo.define('electrical_job_request.job_request_form', ['@odoo/owl', '@web/core/
         }
 
         validateCurrentStep() {
+            if (this.state.current_step === 3 && this.state.job_type === 'new_socket') {
+                if (!this.state.fuse_board_attachment) {
+                    this.state.errors.fuse_board = 'Fuse board photo is required.';
+                    return false;
+                } else {
+                    this.state.errors.fuse_board = '';
+                }
+                if (!this.state.property_type) {
+                    this.state.errors.property_type = 'Property type is required.';
+                    return false;
+                } else {
+                    this.state.errors.property_type = '';
+                }
+                if (!this.state.property_age) {
+                    this.state.errors.property_age = 'Property age is required.';
+                    return false;
+                } else {
+                    this.state.errors.property_age = '';
+                }
+            }
+            if (this.state.current_step === 4 && this.state.job_type === 'new_socket') {
+                if (!this.state.num_sockets || this.state.num_sockets < 1) {
+                    this.state.errors.num_sockets = 'At least one socket is required.';
+                    return false;
+                } else {
+                    this.state.errors.num_sockets = '';
+                }
+                for (let i = 0; i < this.state.socket_lines.length; i++) {
+                    const line = this.state.socket_lines[i];
+                    if (!line.room_name) {
+                        this.state.message = `Room name is required for socket ${i + 1}.`;
+                        this.state.messageType = 'alert-danger';
+                        return false;
+                    }
+                    if (!line.socket_style) {
+                        this.state.message = `Socket style is required for socket ${i + 1}.`;
+                        this.state.messageType = 'alert-danger';
+                        return false;
+                    }
+                    if (!line.height_from_floor || line.height_from_floor <= 0) {
+                        this.state.message = `Valid height from floor is required for socket ${i + 1}.`;
+                        this.state.messageType = 'alert-danger';
+                        return false;
+                    }
+                    if (!line.mount_type) {
+                        this.state.message = `Mount type is required for socket ${i + 1}.`;
+                        this.state.messageType = 'alert-danger';
+                        return false;
+                    }
+                    if (!line.flooring_type) {
+                        this.state.message = `Flooring type is required for socket ${i + 1}.`;
+                        this.state.messageType = 'alert-danger';
+                        return false;
+                    }
+                }
+            }
             return validationUtils.validateCurrentStep(this.state, this.formRef.el);
+        }
+
+        validateField(field) {
+            const value = this.state[field];
+            let error = '';
+
+            if (field === 'first_name') {
+                if (!value.trim()) error = 'First name is required.';
+            } else if (field === 'email') {
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!value.trim()) error = 'Email is required.';
+                else if (!emailRegex.test(value)) error = 'Invalid email format.';
+            } else if (field === 'mobile') {
+                const mobileRegex = /^(\+44\s?7\d{3}|\(?07\d{3}\)?)\s?\d{3}\s?\d{3}$/;
+                if (value && !mobileRegex.test(value)) error = 'Invalid UK mobile number.';
+            } else if (field === 'postcode') {
+                if (!value.trim()) {
+                    error = 'Postcode is required.';
+                } else {
+                    const ukPostcodeRegex = /^([Gg][Ii][Rr] 0[Aa]{2})|((([A-Za-z][0-9]{1,2})|(([A-Za-z][A-Ha-hJ-Yj-y][0-9]{1,2})|(([A-Za-z][0-9][A-Za-z])|([A-Za-z][A-Ha-hJ-Yj-y][0-9]?[A-Za-z])))) ?[0-9][A-Za-z]{2})$/i;
+                    if (!ukPostcodeRegex.test(value)) {
+                        error = 'Invalid postcode format.';
+                    }
+                }
+            } else if (field === 'property_type') {
+                if (!value) error = 'Property type is required.';
+            } else if (field === 'property_age') {
+                if (!value) error = 'Property age is required.';
+            } else if (field === 'num_sockets') {
+                if (!value || value < 1) error = 'At least one socket is required.';
+            }
+
+            this.state.errors[field] = error;
+        }
+
+        validatePostcode() {
+            let pc = this.state.postcode.trim().toUpperCase().replace(/\s+/g, '');
+            if (pc.length >= 5 && pc.length <= 7) {
+                pc = pc.slice(0, -3) + ' ' + pc.slice(-3);
+            }
+            this.state.postcode = pc;
+            this.validateField('postcode');
         }
 
         nextStep() {
             this.clearInvalidClasses();
             this.state.message = ''; // Clear previous message
+
+            // Validate all fields in step 1
+            if (this.state.current_step === 1) {
+                ['first_name', 'email', 'mobile', 'postcode'].forEach(field => this.validateField(field));
+                if (!this.state.job_type) {
+                    this.state.errors.job_type = 'Job type is required.';
+                }
+            }
+
             if (this.validateCurrentStep()) {
                 if (this.state.current_step < this.state.total_steps) {
                     if (this.state.current_step === 3 && this.state.job_type === 'new_socket' && this.state.socket_lines.length === 0) {
-                        this.addSocketLine(); // Add initial socket when entering step 4
+                        this.addSocketLine(); // Ensure at least one socket
                     }
                     this.state.current_step++;
                 }
@@ -97,7 +431,19 @@ odoo.define('electrical_job_request.job_request_form', ['@odoo/owl', '@web/core/
         }
 
         addSocketLine() {
-            this.state.socket_lines.push({ room_name: '', socket_style: '', height_from_floor: 0, mount_type: '', flooring_type: '', flooring_other: '', wall_type: '', gangs: '', location_attachments: [], route_attachments: [], socket_comments: '' });
+            this.state.socket_lines.push({
+                room_name: '',
+                socket_style: '',
+                height_from_floor: 0,
+                mount_type: '',
+                flooring_type: '',
+                flooring_other: '',
+                wall_type: '',
+                gangs: '',
+                location_attachments: [],
+                route_attachments: [],
+                socket_comments: ''
+            });
         }
 
         removeSocketLine(index) {
@@ -134,6 +480,7 @@ odoo.define('electrical_job_request.job_request_form', ['@odoo/owl', '@web/core/
 
         async onFuseBoardChange(ev) {
             await fileUtils.handleSingleFileChange(ev, 'fuse_board_attachment', this.state);
+            this.state.errors.fuse_board = ''; // Clear error on upload
         }
 
         async onWaterBondPhotoChange(ev) {
@@ -181,16 +528,28 @@ odoo.define('electrical_job_request.job_request_form', ['@odoo/owl', '@web/core/
             this.state.message = '';
             this.state.messageType = '';
 
-            // Basic validation
-            if (this.state.job_type === 'new_socket' && !this.state.socket_lines.length) {
-                this.state.message = 'At least one socket required.';
-                this.state.messageType = 'alert-danger';
-                return;
-            }
-            if (this.state.job_type === 'new_socket' && !this.state.fuse_board_attachment) {
-                this.state.message = 'Fuse board photo required.';
-                this.state.messageType = 'alert-danger';
-                return;
+            // Per-job validation
+            if (this.state.job_type === 'new_socket') {
+                if (!this.state.socket_lines.length) {
+                    this.state.message = 'At least one socket required.';
+                    this.state.messageType = 'alert-danger';
+                    return;
+                }
+                if (!this.state.fuse_board_attachment) {
+                    this.state.message = 'Fuse board photo required.';
+                    this.state.messageType = 'alert-danger';
+                    return;
+                }
+                if (!this.state.property_type) {
+                    this.state.message = 'Property type is required.';
+                    this.state.messageType = 'alert-danger';
+                    return;
+                }
+                if (!this.state.property_age) {
+                    this.state.message = 'Property age is required.';
+                    this.state.messageType = 'alert-danger';
+                    return;
+                }
             }
 
             let allPendingFiles = [];
@@ -274,14 +633,14 @@ odoo.define('electrical_job_request.job_request_form', ['@odoo/owl', '@web/core/
                 }));
 
                 const formData = {
-                    name: this.state.name,
+                    first_name: this.state.first_name,
                     email: this.state.email,
-                    phone: this.state.phone,
+                    mobile: this.state.mobile,
+                    postcode: this.state.postcode,
                     job_type: this.state.job_type,
                     customer_notes: this.state.customer_notes,
                     property_type: this.state.property_type,
                     property_age: this.state.property_age,
-                    // foundation_type: this.state.foundation_type,
                     attic_access: this.state.attic_access,
                     panel_type: this.state.panel_type,
                     recent_upgrades: this.state.recent_upgrades,
@@ -312,6 +671,58 @@ odoo.define('electrical_job_request.job_request_form', ['@odoo/owl', '@web/core/
                         socket_comments: line.socket_comments,
                     })),
                     attachments: generalMetadata,
+                    // Placeholder fields
+                    ev_power_level: this.state.ev_power_level,
+                    ev_location: this.state.ev_location,
+                    light_type: this.state.light_type,
+                    light_quantity: this.state.light_quantity,
+                    consumer_unit_type: this.state.consumer_unit_type,
+                    safety_report_type: this.state.safety_report_type,
+                    rewire_scope: this.state.rewire_scope,
+                    rewire_rooms: this.state.rewire_rooms,
+                    cabling_length: this.state.cabling_length,
+                    network_speed: this.state.network_speed,
+                    heating_system_type: this.state.heating_system_type,
+                    smart_integration_type: this.state.smart_integration_type,
+                    socket_quantity: this.state.socket_quantity,
+                    appliance_type: this.state.appliance_type,
+                    outbuilding_type: this.state.outbuilding_type,
+                    ev_power_rating: this.state.ev_power_rating,
+                    light_location: this.state.light_location,
+                    downlights_count: this.state.downlights_count,
+                    smart_compatibility: this.state.smart_compatibility,
+                    motion_sensor: this.state.motion_sensor,
+                    dimmer_count: this.state.dimmer_count,
+                    current_unit_type: this.state.current_unit_type,
+                    rccb_circuit: this.state.rccb_circuit,
+                    surge_scope: this.state.surge_scope,
+                    property_size: this.state.property_size,
+                    alarms_count: this.state.alarms_count,
+                    bonding_status: this.state.bonding_status,
+                    last_test_date: this.state.last_test_date,
+                    emergency_type: this.state.emergency_type,
+                    rooms_count: this.state.rooms_count,
+                    partial_rooms: this.state.partial_rooms,
+                    trunking_length: this.state.trunking_length,
+                    facility_size: this.state.facility_size,
+                    minor_description: this.state.minor_description,
+                    fault_symptoms: this.state.fault_symptoms,
+                    cable_type: this.state.cable_type,
+                    ethernet_points: this.state.ethernet_points,
+                    coverage_area: this.state.coverage_area,
+                    shower_power: this.state.shower_power,
+                    heating_area: this.state.heating_area,
+                    thermostat_type: this.state.thermostat_type,
+                    integration_platform: this.state.integration_platform,
+                    hub_brand: this.state.hub_brand,
+                    knx_devices: this.state.knx_devices,
+                    panel_location: this.state.panel_location,
+                    doors_count: this.state.doors_count,
+                    cameras_count: this.state.cameras_count,
+                    gate_type: this.state.gate_type,
+                    lighting_bonding: this.state.lighting_bonding,
+                    smart_systems: this.state.smart_systems,
+                    ceiling_type: this.state.ceiling_type,
                 };
 
                 const response = await rpc('/job-request/submit', formData);
