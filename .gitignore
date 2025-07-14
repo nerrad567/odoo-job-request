@@ -14,3 +14,4 @@ node_modules/
 attachments/
 data/system_parameters.secure.xml
 filtered_output.txt
+temp
