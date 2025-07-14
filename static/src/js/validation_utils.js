@@ -10,7 +10,7 @@ odoo.define('electrical_job_request.validation_utils', [], function (require) {
         let errorMessage = 'Please fill all required fields correctly in this step.';
 
         if (state.current_step === 4 && state.job_type === 'new_socket') {
-            if (state.socket_lines.length === 0) {
+            if (state.new_socket_installations.length === 0) {
                 state.message = 'Please add at least one socket.';
                 state.messageType = 'alert-danger';
                 return false;

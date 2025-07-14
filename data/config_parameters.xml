@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="param_delete_s3_on_unlink" model="ir.config_parameter">
+            <field name="key">delete_s3_on_unlink</field>
+            <field name="value">True</field>  <!-- Set to True to enable S3 delete; False to disable -->
+        </record>
+    </data>
+</odoo>

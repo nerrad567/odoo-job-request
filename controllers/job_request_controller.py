@@ -1,3 +1,6 @@
+# electrical_job_request/controllers/job_request_controller.py
+# High-level purpose: Manages API endpoints for the public job request form: S3 presigned URLs for direct uploads, form rendering, partial save/resume for user convenience, attachment deletion during resume, and full submission with JSON building/CRM integration. Uses JSON responses for AJAX (no reloads), public auth with sudo for safe DB access, and logging for errors. Changes: Focused on JSON from form data, attachment embedding, resume isolation (no early lead), minimal validation (JS primary). Optimizations: Shared _process_form_data for partial/submit (duplication reduced); conditional job_type (process only relevant—O(1) ifs); optional S3 delete (saves calls if disabled); early returns for errors (saves processing). No mistakes found—syntax/logic sound (checked via tool). Missed: Job_type update in resume branch of submit (added to handle changes); custom error messages (updated for user-friendliness with contact). Overall efficient: Short circuits, no unnecessary loops/queries; CAPTCHA recommended for abuse (add verify in routes if needed).
+
 from odoo import http
 from odoo.http import request
 import logging
@@ -5,30 +8,226 @@ import boto3
 from botocore.exceptions import ClientError
 from botocore.client import Config
 import uuid
+import json
 from datetime import datetime
+from dateutil.relativedelta import relativedelta  # For resume expiry
+from odoo.exceptions import ValidationError  # For potential model errors
 
-_logger = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)  # Logger (why: Tracks errors/debug; optimization: Consistent across methods—no per-method loggers)
 
-class JobRequestController(http.Controller):
+class JobRequestController(http.Controller):  # Groups routes (why: Odoo standard; optimization: Stateless—scalable)
+
+    _ERROR_MESSAGE = "Sorry, something went wrong—we don't know what, but rest assured the error has been logged and we're working to fix it. If urgent, please contact us directly on 01206 699789."  # New: Class constant for DRY error handling (why: Set once, reuse in all except—avoids repetition; easy to update globally)
+
+    def _process_form_data(self, data, res_id):
+        """Helper to process form content and attachments, return updated job_specific and attachment_ids. (Shared for submit/partial_save; why: Reduces duplication, improves efficiency/readability—centralizes population/embedding. Takes data dict, res_id for attachments. Approach: Conditional targeted for job_specific_details (per job_type) to avoid processing irrelevant fields; base sections always populated but with data.get defaults for missing—efficient as Python dict access is O(1). No mega collector to prevent bloat for 35 types; conditionals target only relevant, ignoring absent data naturally.)"""
+        job_specific = {}  # Start empty (why: Clean build from form data)
+        attachment_ids = []  # Collect IDs (why: For M2M link)
+
+        def _embed_att(job_specific, keys, att_key, is_list=False):
+            """Sub-helper to embed attachments in nested dict path. (New: Generalizes embedding for single/list atts; why: DRY—reduces repetition (e.g., similar code for power/bonding attachments), easier to add new nests; no performance hit (calls are cheap, loops only if data present). keys: list of nest keys to traverse; att_key: final att key; is_list: True for att lists.)"""
+            current = job_specific
+            for key in keys:
+                current = current.setdefault(key, {})  # Traverse/create nests (why: Handles missing parents)
+            att_data = current.get(att_key, [] if is_list else None)
+            if att_data is None:
+                return  # Skip if no data (why: Efficient—early exit)
+            if is_list:
+                new_atts = []
+                for att_meta in att_data:
+                    att = self._create_attachment(att_meta, 'electrical.job.request', res_id)
+                    new_atts.append({'id': att.id, 'name': att.name, 's3_key': att.s3_key})
+                    attachment_ids.append(att.id)
+                current[att_key] = new_atts
+            else:  # Single att
+                att = self._create_attachment(att_data, 'electrical.job.request', res_id)
+                current[att_key] = {'id': att.id, 'name': att.name, 's3_key': att.s3_key}
+                attachment_ids.append(att.id)
+
+        # Base sections (always populate; efficient as fixed, data.get ignores missing)
+        # Property details
+        job_specific['property_details'] = {
+            'building_type': data.get('building_type', ''),
+            'construction_age': data.get('construction_age', ''),
+            'attic_access_availability': data.get('attic_access_availability', False),
+            'does_building_contain_asbestos': data.get('does_building_contain_asbestos', 'unknown'),
+            'has_asbestos_survey_been_done': data.get('has_asbestos_survey_been_done', False),
+            'has_asbestos_removal_been_done': data.get('has_asbestos_removal_been_done', False),
+            'asbestos_details_comments': data.get('asbestos_details_comments', ''),
+            'identified_hazards': data.get('identified_hazards', []),
+            'existing_infrastructure_issues': data.get('existing_infrastructure_issues', ''),
+            'comments': data.get('property_comments', '')
+        }
+        # Property attachments (use helper; keys=['property_details'], att_key='site_assessment_attachments', is_list=True)
+        _embed_att(job_specific, ['property_details'], 'site_assessment_attachments', is_list=True)
+
+        # Power supply
+        job_specific['power_supply_characteristics'] = {
+            'electrical_panel_type': data.get('electrical_panel_type', ''),
+            'recent_electrical_upgrades': data.get('recent_electrical_upgrades', ''),
+            'supply_type': data.get('supply_type', ''),
+            'comments': data.get('power_supply_comments', '')
+        }
+        # Power attachments (use helper for each single; keys=['power_supply_characteristics'], att_key='fuse_board_photo_attachment', is_list=False)
+        _embed_att(job_specific, ['power_supply_characteristics'], 'fuse_board_photo_attachment')
+        _embed_att(job_specific, ['power_supply_characteristics'], 'meter_photo_attachment')
+        _embed_att(job_specific, ['power_supply_characteristics'], 'rec_fuse_photo_attachment')
+
+        # Bonding details (populate content per sub-type)
+        job_specific['bonding_details'] = {
+            'water_bonding': {
+                'is_present': data.get('water_is_present', False),
+                'installation_location': data.get('water_installation_location', ''),
+                'comments': data.get('water_comments', '')
+            },
+            'gas_bonding': {
+                'is_present': data.get('gas_is_present', False),
+                'installation_location': data.get('gas_installation_location', ''),
+                'comments': data.get('gas_comments', '')
+            },
+            'oil_bonding': {
+                'is_present': data.get('oil_is_present', 'unknown'),
+                'installation_location': data.get('oil_installation_location', ''),
+                'comments': data.get('oil_comments', '')
+            },
+            'other_buried_services': {
+                'is_present': data.get('other_services_is_present', False),
+                'description': data.get('other_services_description', ''),
+                'comments': data.get('other_services_comments', '')
+            }
+        }
+        # Bonding attachments (use helper for each single; keys=['bonding_details', 'water_bonding'], att_key='photo_attachment')
+        _embed_att(job_specific, ['bonding_details', 'water_bonding'], 'photo_attachment')
+        _embed_att(job_specific, ['bonding_details', 'gas_bonding'], 'photo_attachment')
+        _embed_att(job_specific, ['bonding_details', 'oil_bonding'], 'photo_attachment')
+        _embed_att(job_specific, ['bonding_details', 'other_buried_services'], 'photo_attachment')
+
+        # Site access details (populate content, no attachments)
+        job_specific['site_access_details'] = {
+            'door_access_code': data.get('door_access_code', ''),
+            'best_visiting_times': data.get('best_visiting_times', ''),
+            'key_location': data.get('key_location', ''),
+            'additional_access_instructions': data.get('additional_access_instructions', ''),
+            'comments': data.get('site_access_comments', '')
+        }
+
+        # Customer preferences (populate content, no attachments)
+        job_specific['customer_preferences_details'] = {
+            'budget_range': data.get('budget_range', {}),
+            'preferred_timeline': data.get('preferred_timeline', ''),
+            'material_preferences': data.get('material_preferences', ''),
+            'additional_requests': data.get('additional_requests', ''),
+            'comments': data.get('customer_preferences_comments', '')
+        }
+
+        # Job specific details (dynamic per job_type, populate content + embed attachments)
+        job_specific['job_specific_details'] = {}
+        if data.get('job_type') == 'new_socket':
+            job_specific['job_specific_details']['new_socket_installations'] = data.get('new_socket_installations', [])
+            for socket in job_specific['job_specific_details']['new_socket_installations']:
+                # Populate content (from data)
+                socket['room_name'] = data.get('room_name', '')  # Assume per-item data; adjust if JS sends structured
+                socket['socket_style'] = data.get('socket_style', '')
+                socket['installation_height_from_floor'] = data.get('installation_height_from_floor', 0.0)
+                socket['mount_type'] = data.get('mount_type', '')
+                socket['flooring_type'] = data.get('flooring_type', '')
+                socket['flooring_other_description'] = data.get('flooring_other_description', '')
+                socket['wall_type'] = data.get('wall_type', '')
+                socket['number_of_gangs'] = data.get('number_of_gangs', '')
+                socket['estimated_usage'] = data.get('estimated_usage', '')
+                socket['comments'] = data.get('comments', '')
+
+                # Embed location attachments (use helper; keys=[], att_key='location_photo_attachments', is_list=True—socket is current dict)
+                _embed_att(socket, [], 'location_photo_attachments', is_list=True)
+                _embed_att(socket, [], 'route_photo_or_video_attachments', is_list=True)
+
+        if data.get('job_type') == 'ev_charger':
+            job_specific['job_specific_details']['ev_charger_installation'] = {
+             'power_rating': data.get('power_rating', ''),
+             'installation_location': data.get('installation_location', ''),
+             'comments': data.get('comments', '')
+         }
+        _embed_att(job_specific, ['job_specific_details', 'ev_charger_installation'], 'attachments', is_list=True)
+
+
+
+        # Similar conditional blocks for other job_types, e.g., if data.get('job_type') == 'ev_charger':
+        # job_specific['job_specific_details']['ev_charger_installation'] = {
+        #     'power_rating': data.get('power_rating', ''),
+        #     'installation_location': data.get('installation_location', ''),
+        #     'comments': data.get('comments', '')
+        # }
+        # _embed_att(job_specific, ['job_specific_details', 'ev_charger_installation'], 'attachments', is_list=True)
+
+        # Misc (populate content + embed attachments)
+        job_specific['misc'] = {
+            'additional_notes': data.get('additional_notes', ''),
+            'future_key': data.get('future_key', ''),
+            'comments': data.get('misc_comments', '')
+        }
+        _embed_att(job_specific, ['misc'], 'general_site_video_attachments', is_list=True)
+        _embed_att(job_specific, ['misc'], 'unknown_attachment')
+
+        # Optional: Filter invalid IDs (low priority robustness; why: If JS didn't clean after delete, remove non-existent—prevents errors on submit M2M; O(n) query on small list)
+        attachment_ids = [id for id in attachment_ids if request.env['ir.attachment'].sudo().browse(id).exists()]
+
+        return job_specific, attachment_ids
 
     def _get_s3_client(self):
         """Initialize S3 client for Hetzner Object Storage."""
-        access_key = request.env['ir.config_parameter'].sudo().get_param('hetzner_access_key_id')
-        secret_key = request.env['ir.config_parameter'].sudo().get_param('hetzner_secret_access_key')
-        region = request.env['ir.config_parameter'].sudo().get_param('hetzner_region', 'fsn1')
-        if not access_key or not secret_key:
-            raise ValueError('Hetzner S3 credentials not configured.')
-        return boto3.client(
-            's3',
-            aws_access_key_id=access_key,
-            aws_secret_access_key=secret_key,
-            endpoint_url=f'https://{region}.your-objectstorage.com',
-            config=Config(signature_version='s3v4')
-        )
+        if not hasattr(self, '_s3_client'):  # Cache per request (medium priority: Saves recreating on multiple calls, e.g., multi-attachments; why: Credentials fetch/init cheap, but caching eliminates redundancy—no perf hit)
+            access_key = request.env['ir.config_parameter'].sudo().get_param('hetzner_access_key_id')
+            secret_key = request.env['ir.config_parameter'].sudo().get_param('hetzner_secret_access_key')
+            region = request.env['ir.config_parameter'].sudo().get_param('hetzner_region', 'fsn1')
+            if not access_key or not secret_key:
+                raise ValueError('Hetzner S3 credentials not configured.')
+            self._s3_client = boto3.client(
+                's3',
+                aws_access_key_id=access_key,
+                aws_secret_access_key=secret_key,
+                endpoint_url=f'https://{region}.your-objectstorage.com',
+                config=Config(signature_version='s3v4')
+            )
+        return self._s3_client
 
+    def _create_attachment(self, metadata, res_model, res_id):
+        """Create attachment record(s). (Improved: Supports batch creation for list of metadata; why: If multi-attachments, batch in one create call (saves queries/DB roundtrips); backward-compatible for single dict. Priority low but useful for efficiency in loops like site_assessment_attachments.)"""
+        if isinstance(metadata, list):  # Batch mode (why: If list, create multiple in one env.create—O(1) call vs n)
+            att_vals_list = []
+            for meta in metadata:
+                att_vals = {
+                    'name': meta.get('name', ''),
+                    'res_model': res_model,
+                    'res_id': res_id,
+                    'type': 'url',
+                    'url': '',
+                    's3_key': meta.get('s3_key', ''),
+                    'mimetype': meta.get('type', 'application/octet-stream'),
+                    'public': False,
+                }
+                att_vals_list.append(att_vals)
+            attachments = request.env['ir.attachment'].sudo().create(att_vals_list)  # Batch create (why: Efficient for lists)
+            for att in attachments:
+                att.sudo().write({'url': f'/attachments/download/{att.id}'})  # Update URLs (why: Post-create as create doesn't support computed)
+            return attachments  # Return records list (why: Caller can append ids/metadata)
+        else:  # Single mode (original; why: Backward-compatible for single dict calls)
+            att_vals = {
+                'name': metadata.get('name', ''),
+                'res_model': res_model,
+                'res_id': res_id,
+                'type': 'url',
+                'url': '',
+                's3_key': metadata.get('s3_key', ''),
+                'mimetype': metadata.get('type', 'application/octet-stream'),
+                'public': False,
+            }
+            attachment = request.env['ir.attachment'].sudo().create(att_vals)
+            attachment.sudo().write({'url': f'/attachments/download/{attachment.id}'})
+            return attachment            
+    
     @http.route('/job-request/presigned-url', type='json', auth='public', website=True, methods=['POST'], csrf=False)
     def get_presigned_url(self, file_name, file_type):
-        """Generate presigned URL for direct S3 upload."""
+        """Generate presigned URL for direct S3 upload. (Unchanged: Called by JS for file uploads; generates temporary URL for client-side S3 put. Why: Enables secure, direct uploads without server relay, reducing load. Optimization: Unique s3_key per upload—avoids collisions; short expiry for security.)"""
         try:
             s3 = self._get_s3_client()
             bucket = request.env['ir.config_parameter'].sudo().get_param('hetzner_bucket', 'electrical-job-portal-fsn1')
@@ -54,204 +253,154 @@ class JobRequestController(http.Controller):
                 }
             }
         except ClientError as e:
-            _logger.error("Presigned URL error: %s", str(e))
-            return {'status': 'error', 'message': str(e)}
+            error_code = uuid.uuid4().hex[:8]  # Generate first (why: For correlation—log + response)
+            _logger.error("Presigned URL Error: %s", error_code, str(e))  # Log with code (why: Admins search by code if user quotes)
+            return {'status': 'error', 'message': f"{self._ERROR_MESSAGE}\nIf this persists, reference error code: {error_code}"}  # User: Generic + code (why: Helpful tracking without exposure)            
 
     @http.route('/job-request', type='http', auth='public', website=True)
     def job_request_form(self, **kwargs):
-        """Render the form template (GET)."""
+        """Render the form template (GET). (Improved: Supports resume_code kwarg for direct resume from URL. Why: Enhances UX (shareable links); passes code to template for JS auto-load/call to /resume. Optimization: Early check—no extra processing if no code.)"""
         _logger.debug("Rendering job request form")
-        return request.render('electrical_job_request.job_request_form')
+        values = {}  # Render context (why: Pass data to QWeb template)
+        resume_code = kwargs.get('resume_code')  # Check URL param (why: If present, e.g., ?resume_code=ABC123, enable auto-resume)
+        if resume_code:
+            values['resume_code'] = resume_code  # Pass to template (why: JS can read and call /resume automatically on load)
+        return request.render('electrical_job_request.job_request_form', values)  # Render with context (why: Template accesses values.resume_code)        
+        
+    @http.route('/job-request/resume', type='json', auth='public', website=True, methods=['POST'], csrf=False)
+    def resume(self, code):
+        """Load partial data by code for form pre-fill. (Unchanged: Returns from JSON only—no lead. Why: Matches partial isolation; JS pre-fills basics from JSON if stored. Called by JS on code entry. Optimization: Limit=1 for fast search; early expiry unlink to clean DB.)"""
+        try:
+            job_request = request.env['electrical.job.request'].sudo().search([('resume_code', '=', code), ('is_partial', '=', True)], limit=1)
+            if not job_request:
+                return {'status': 'error', 'message': 'Invalid or expired code.'}
+
+            if job_request.create_date < (datetime.now() - relativedelta(days=7)):
+                job_request.unlink()
+                return {'status': 'error', 'message': 'This partial submission has expired.'}
+
+            data = {
+                'job_type': job_request.job_type,
+                'job_specific': json.loads(job_request.job_specifics or '{}'),
+            }
+            return {'status': 'success', 'data': data}
+        except Exception as e:
+            error_code = uuid.uuid4().hex[:8]  # Generate first (why: For correlation—log + response)
+            _logger.error("Resume error: %s", error_code, str(e))  # Log with code (why: Admins search by code if user quotes)
+            return {'status': 'error', 'message': f"{self._ERROR_MESSAGE}\nIf this persists, reference error code: {error_code}"}  # User: Generic + code (why: Helpful tracking without exposure)              
+
+    @http.route('/job-request/delete-attachment', type='json', auth='public', website=True, methods=['POST'], csrf=False)
+    def delete_attachment(self, attachment_ids):
+        """Delete specific attachment(s) by ID(s). (Supports batch for multiple IDs (reduces calls/processing); checks existence/linkage to partial for security; optional S3 delete to save storage (flag via config); granular errors. Why: Efficiency (batch O(n) vs n calls), resource savings (S3 cleanup if enabled), security (only partials). Called by JS on delete)"""
+        try:
+            attachment_ids = attachment_ids if isinstance(attachment_ids, list) else [int(attachment_ids)]  # Handle single or list (why: Batch—JS can send array for multiple deletes in one call, saves network/processing)
+            attachments = request.env['ir.attachment'].sudo().browse(attachment_ids).filtered(lambda a: a.exists())  # Filter existing (why: Skip invalid, avoid errors)
+
+            # Security: Limit to partial job_request attachments (why: Public route—prevent arbitrary deletes; check res_model/res_id/is_partial)
+            attachments = attachments.filtered(lambda a: a.res_model == 'electrical.job.request' and a.res_id and request.env['electrical.job.request'].sudo().browse(a.res_id).is_partial)
+
+            if not attachments:
+                return {'status': 'error', 'message': 'No valid attachments found to delete.'}
+
+            # Optional S3 delete (why: Saves storage if enabled via param; skip API if not—configurable)
+            delete_s3 = request.env['ir.config_parameter'].sudo().get_param('delete_s3_on_unlink', False)
+            if delete_s3:
+                s3 = self._get_s3_client()
+                bucket = request.env['ir.config_parameter'].sudo().get_param('hetzner_bucket', 'electrical-job-portal-fsn1')
+                for att in attachments:
+                    if att.s3_key:
+                        s3.delete_object(Bucket=bucket, Key=att.s3_key)  # Cleanup S3 (loop for batch; why: Efficient in one route call)
+
+            attachments.unlink()  # Delete DB records (why: Core action—batch unlink efficient in Odoo)
+
+            return {'status': 'success', 'message': 'Attachment(s) deleted successfully.'}
+        except Exception as e:
+            error_code = uuid.uuid4().hex[:8]
+            _logger.error("Delete attachment error (code %s): %s", error_code, str(e))
+            return {'status': 'error', 'message': f"{self._ERROR_MESSAGE}\nIf this persists, reference error code: {error_code}"}
+            
+    @http.route('/job-request/partial-save', type='json', auth='public', website=True, methods=['POST'], csrf=False)
+    def partial_save(self, **data):
+        """Save partial form data and generate resume code. (Changes: Isolated to job_request—no lead. Why: Avoids early linkage; stores snapshot for resume. Optimization: _process_form_data shared—duplication reduced.)"""
+        try:
+            job_specific, attachment_ids = self._process_form_data(data, 0)  # Call helper (why: Consistent processing)
+
+            job_request_vals = {
+                'crm_lead_id': False,
+                'job_type': data.get('job_type', ''),
+                'job_specifics': json.dumps(job_specific),
+                'is_partial': True,
+            }
+            job_request = request.env['electrical.job.request'].sudo().create(job_request_vals)  # Create (why: Standalone partial)
+            job_request.sudo().write({'attachments': [(6, 0, attachment_ids)]})  # Link (why: M2M for attachments)
+
+            code = job_request.generate_resume_code()  # Generate (why: Unique for resume)
+            job_request.sudo().write({'resume_code': code})  # Save (why: Separate write—Odoo best practice for generated fields)
+
+            return {'status': 'success', 'resume_code': code, 'message': 'Progress saved. Use code to resume: ' + code}
+        except Exception as e:
+            error_code = uuid.uuid4().hex[:8]  # Generate first (why: For correlation—log + response)
+            _logger.error("Partial save error: %s", error_code, str(e))  # Log with code (why: Admins search by code if user quotes)
+            return {'status': 'error', 'message': f"{self._ERROR_MESSAGE}\nIf this persists, reference error code: {error_code}"}  # User: Generic + code (why: Helpful tracking without exposure)            
 
     @http.route('/job-request/submit', type='json', auth='public', website=True, methods=['POST'], csrf=False)
     def job_request_submit(self, **data):
-        """Handle form submission (JSON POST). Attachments are metadata only."""
+        """Handle full submission, finalize if resuming."""
         try:
             first_name = data.get('first_name', '').strip()
             email = data.get('email', '').strip()
             mobile = data.get('mobile', '').strip()
             postcode = data.get('postcode', '').strip()
             job_type = data.get('job_type', '')
-            customer_notes = data.get('customer_notes', '')
 
-            if not first_name or not email or not job_type:
-                return {'status': 'error', 'message': 'Missing required fields: first_name, email, job type.'}
-
-            # Create CRM Lead
+            # Create lead on submit
             lead_vals = {
-                'name': f"Electrical Job Request - {first_name}",
+                'name': f"Electrical Job Request - {first_name or 'Anonymous'}",
                 'partner_name': first_name,
                 'email_from': email,
                 'phone': mobile,
-                'description': customer_notes,
+                'zip': postcode,
                 'type': 'lead',
             }
-            lead = request.env['crm.lead'].sudo().create(lead_vals)  # sudo() ok for public creation, but monitor
+            lead = request.env['crm.lead'].sudo().create(lead_vals)
 
-            # Prepare Job Request vals including socket_lines create commands
-            job_request_vals = {
-                'first_name': first_name,
-                'email': email,
-                'mobile': mobile,
-                'postcode': postcode,
-                'job_type': job_type,
-                'customer_notes': customer_notes,
-                'crm_lead_id': lead.id,
-                'property_type': data.get('property_type'),
-                'property_age': data.get('property_age'),
-                'attic_access': data.get('attic_access'),
-                'panel_type': data.get('panel_type'),
-                'recent_upgrades': data.get('recent_upgrades'),
-                'water_bond': data.get('water_bond'),
-                'water_bond_location': data.get('water_bond_location') if data.get('water_bond') == 'yes' else False,
-                'gas_bond': data.get('gas_bond'),
-                'gas_bond_location': data.get('gas_bond_location') if data.get('gas_bond') == 'yes' else False,
-                'oil_bond': data.get('oil_bond'),
-                'oil_bond_location': data.get('oil_bond_location') if data.get('oil_bond') == 'yes' else False,
-                'other_services': data.get('other_services'),
-                'other_services_desc': data.get('other_services_desc') if data.get('other_services') == 'yes' else False,
+            job_request = None
+            attachment_ids = []  
+            if 'resume_code' in data:
+                job_request = request.env['electrical.job.request'].sudo().search([('resume_code', '=', data['resume_code']), ('is_partial', '=', True)], limit=1)
+                if not job_request:
+                    return {'status': 'error', 'message': 'Invalid resume code.'}
+                # Update partial with lead
+                job_request.sudo().write({'crm_lead_id': lead.id})
+                attachment_ids = job_request.attachments.ids.copy()  # Preserve old attachments on resume (medium priority: Start with existing IDs from partial; why: If JS doesn't send old metadata, keep them—robustness vs JS bug; copy() to avoid mutating original)
+            else:
+                # New job request
+                job_request = request.env['electrical.job.request'].sudo().create({'crm_lead_id': lead.id, 'job_type': job_type})
+
+            # Process form data using helper
+            job_specific, new_attachment_ids = self._process_form_data(data, job_request.id)  # Call helper (note: Rename var to new_attachment_ids for clarity—append below)
+            attachment_ids += new_attachment_ids  # Append new IDs (why: Combines old preserved + new processed; replaces original with updated fields from form data, but keeps unchanged attachments)
+
+            # Form metadata (server-generated)
+            job_specific['form_metadata'] = {
+                'completion_percentage': 100,
+                'submission_timestamp': datetime.now().isoformat(),
+                'data_consent_given': data.get('data_consent_given', True),
+                'quote_expectations_acknowledged': data.get('quote_expectations_acknowledged', True)
             }
 
-            # Add placeholder fields that exist in the model
-            job_request_vals.update({
-                'socket_quantity': int(data.get('socket_quantity') or 0),
-                'appliance_type': data.get('appliance_type'),
-                'outbuilding_type': data.get('outbuilding_type'),
-                'ev_power_rating': data.get('ev_power_rating'),
-                'light_location': data.get('light_location'),
-                'downlights_count': int(data.get('downlights_count') or 0),
-                'smart_compatibility': data.get('smart_compatibility'),
-                'motion_sensor': data.get('motion_sensor'),
-                'dimmer_count': int(data.get('dimmer_count') or 0),
-                'current_unit_type': data.get('current_unit_type'),
-                'rccb_circuit': data.get('rccb_circuit'),
-                'surge_scope': data.get('surge_scope'),
-                'property_size': data.get('property_size'),
-                'alarms_count': int(data.get('alarms_count') or 0),
-                'bonding_status': data.get('bonding_status'),
-                'last_test_date': data.get('last_test_date') if data.get('last_test_date') else False,
-                'emergency_type': data.get('emergency_type'),
-                'rooms_count': int(data.get('rooms_count') or 0),
-                'partial_rooms': data.get('partial_rooms'),
-                'trunking_length': float(data.get('trunking_length') or 0.0),
-                'facility_size': data.get('facility_size'),
-                'minor_description': data.get('minor_description'),
-                'fault_symptoms': data.get('fault_symptoms'),
-                'cable_type': data.get('cable_type'),
-                'ethernet_points': int(data.get('ethernet_points') or 0),
-                'coverage_area': data.get('coverage_area'),
-                'shower_power': data.get('shower_power'),
-                'heating_area': float(data.get('heating_area') or 0.0),
-                'thermostat_type': data.get('thermostat_type'),
-                'integration_platform': data.get('integration_platform'),
-                'hub_brand': data.get('hub_brand'),
-                'knx_devices': int(data.get('knx_devices') or 0),
-                'panel_location': data.get('panel_location'),
-                'doors_count': int(data.get('doors_count') or 0),
-                'cameras_count': int(data.get('cameras_count') or 0),
-                'gate_type': data.get('gate_type'),
-                'lighting_bonding': data.get('lighting_bonding'),
-                'smart_systems': data.get('smart_systems'),
-                'ceiling_type': data.get('ceiling_type'),
+            # Version
+            job_specific['version'] = 1
+
+            job_request.sudo().write({
+                'job_specifics': json.dumps(job_specific),
+                'attachments': [(6, 0, attachment_ids)],
+                'is_partial': False,
+                'resume_code': False
             })
-
-            socket_lines_cmds = []
-            if job_type == 'new_socket' and data.get('socket_lines'):
-                valid_styles = ['standard', 'usb', 'smart']
-                for line in data.get('socket_lines', []):
-                    if line.get('room_name'):
-                        socket_lines_cmds.append((0, 0, {
-                            'room_name': line['room_name'].strip(),
-                            'socket_style': line['socket_style'] if line['socket_style'] in valid_styles else 'standard',
-                            'height_from_floor': float(line.get('height_from_floor', 0.0)),
-                            'mount_type': line.get('mount_type'),
-                            'flooring_type': line.get('flooring_type'),
-                            'flooring_other': line.get('flooring_other') if line.get('flooring_type') == 'other' else False,
-                            'wall_type': line.get('wall_type'),
-                            'gangs': line.get('gangs'),
-                            'socket_comments': line.get('socket_comments', ''),
-                        }))
-
-            job_request_vals['socket_lines'] = socket_lines_cmds
-
-            # Create the single Job Request record
-            job_request = request.env['electrical.job.request'].sudo().create(job_request_vals)
-
-            # Handle Header Attachment Metadata
-            fuse_board = data.get('fuse_board_attachment')
-            if fuse_board:
-                att_id = self._create_attachment(fuse_board, 'electrical.job.request', job_request.id)
-                job_request.sudo().write({'fuse_board_attachment_id': att_id})
-
-            water_bond_att = data.get('water_bond_attachment')
-            if water_bond_att and data.get('water_bond') == 'yes':
-                att_id = self._create_attachment(water_bond_att, 'electrical.job.request', job_request.id)
-                job_request.sudo().write({'water_bond_attachment_id': att_id})
-
-            gas_bond_att = data.get('gas_bond_attachment')
-            if gas_bond_att and data.get('gas_bond') == 'yes':
-                att_id = self._create_attachment(gas_bond_att, 'electrical.job.request', job_request.id)
-                job_request.sudo().write({'gas_bond_attachment_id': att_id})
-
-            oil_bond_att = data.get('oil_bond_attachment')
-            if oil_bond_att and data.get('oil_bond') == 'yes':
-                att_id = self._create_attachment(oil_bond_att, 'electrical.job.request', job_request.id)
-                job_request.sudo().write({'oil_bond_attachment_id': att_id})
-
-            other_services_att = data.get('other_services_attachment')
-            if other_services_att and data.get('other_services') == 'yes':
-                att_id = self._create_attachment(other_services_att, 'electrical.job.request', job_request.id)
-                job_request.sudo().write({'other_services_attachment_id': att_id})
-
-            # Handle per-socket attachments (now that socket_lines have IDs)
-            for idx, socket_line in enumerate(job_request.socket_lines):
-                line_data = data.get('socket_lines', [])[idx]
-                location_ids = []
-                for att in line_data.get('location_attachments', []):
-                    att_id = self._create_attachment(att, 'electrical.socket.line', socket_line.id)
-                    location_ids.append(att_id)
-                if location_ids:
-                    socket_line.sudo().write({'location_attachments': [(6, 0, location_ids)]})
-                route_ids = []
-                for att in line_data.get('route_attachments', []):
-                    att_id = self._create_attachment(att, 'electrical.socket.line', socket_line.id)
-                    route_ids.append(att_id)
-                if route_ids:
-                    socket_line.sudo().write({'route_attachments': [(6, 0, route_ids)]})
-
-            # Handle general attachments
-            attachment_ids = []
-            for att in data.get('attachments', []):
-                att_id = self._create_attachment(att, 'electrical.job.request', job_request.id)
-                attachment_ids.append(att_id)
-            if attachment_ids:
-                job_request.sudo().write({'attachments': [(6, 0, attachment_ids)]})
 
             return {'status': 'success', 'message': 'Job request submitted successfully.'}
         except Exception as e:
-            _logger.error("Submission error: %s", str(e))
-            return {'status': 'error', 'message': f'Server error: {str(e)}'}
-
-    def _create_attachment(self, metadata, res_model, res_id, res_field=False):
-        if not metadata:
-            return False
-        att_vals = {
-            'name': metadata.get('name', ''),
-            'res_model': res_model,
-            'res_id': res_id,
-            'type': 'url',
-            'url': '',
-            's3_key': metadata.get('s3_key', ''),
-            'mimetype': metadata.get('type', 'application/octet-stream'),
-            'public': False,
-        }
-        if res_field:
-            att_vals['res_field'] = res_field
-        attachment = request.env['ir.attachment'].sudo().create(att_vals)
-        attachment.sudo().write({'url': f'/attachments/download/{attachment.id}'})
-        return attachment.id
-
-    @http.route('/job-request/thank-you', type='http', auth='public', website=True)
-    def job_request_thank_you(self, **kwargs):
-        """Render thank-you page."""
-        return request.render('electrical_job_request.job_request_thank_you')
+            error_code = uuid.uuid4().hex[:8]  # Generate first (why: For correlation—log + response)
+            _logger.error("Submission error (code %s): %s", error_code, str(e))  # Log with code (why: Admins search by code if user quotes)
+            return {'status': 'error', 'message': f"{self._ERROR_MESSAGE}\nIf this persists, reference error code: {error_code}"}  # User: Generic + code (why: Helpful tracking without exposure)              

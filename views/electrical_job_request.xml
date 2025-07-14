@@ -8,96 +8,16 @@
             <form string="Electrical Job Request">
                 <sheet>
                     <group>
-                        <field name="first_name"/>
-                        <field name="email"/>
-                        <field name="mobile"/>
-                        <field name="postcode"/>
-                        <field name="job_type"/>
-                        <field name="customer_notes"/>
                         <field name="crm_lead_id" domain="[('type', '=', 'lead')]"/>
+                        <field name="job_type"/>
+                        <field name="job_specifics" widget="text" readonly="1"/>
                     </group>
                     <notebook>
-                        <page string="General Details" invisible="job_type not in ['new_socket', 'additional_circuit', 'outbuilding_power', 'ev_charger', 'full_rewire', 'partial_rewire', 'dado_trunking', 'industrial_rewire', 'minor_works', 'structured_cabling', 'ethernet_point']">
-                            <group>
-                                <field name="property_type"/>
-                                <field name="property_age"/>
-                                <!-- <field name="foundation_type"/> -->
-                                <field name="attic_access"/>
-                                <field name="panel_type"/>
-                                <field name="recent_upgrades"/>
-                                <field name="fuse_board_attachment_id" widget="image"/>
-                            </group>
-                            <group string="Bonding">
-                                <field name="water_bond"/>
-                                <field name="water_bond_location" invisible="water_bond != 'yes'"/>
-                                <field name="water_bond_attachment_id" widget="image" invisible="water_bond != 'yes'"/>
-                                <field name="gas_bond"/>
-                                <field name="gas_bond_location" invisible="gas_bond != 'yes'"/>
-                                <field name="gas_bond_attachment_id" widget="image" invisible="gas_bond != 'yes'"/>
-                                <field name="oil_bond"/>
-                                <field name="oil_bond_location" invisible="oil_bond != 'yes'"/>
-                                <field name="oil_bond_attachment_id" widget="image" invisible="oil_bond != 'yes'"/>
-                                <field name="other_services"/>
-                                <field name="other_services_desc" invisible="other_services != 'yes'"/>
-                                <field name="other_services_attachment_id" widget="image" invisible="other_services != 'yes'"/>
-                            </group>
-                        </page>
-                        <page string="Socket Details" invisible="job_type not in ['new_socket', 'additional_circuit', 'outbuilding_power', 'ev_charger', 'full_rewire', 'partial_rewire', 'dado_trunking', 'industrial_rewire', 'minor_works', 'structured_cabling', 'ethernet_point']">
-                            <field name="socket_lines" nolabel="1" context="{'list_view_ref': 'electrical_job_request.view_electrical_socket_line_list', 'form_view_ref': 'electrical_job_request.view_electrical_socket_line_form'}"/>
-                        </page>
                         <page string="Attachments">
                             <field name="attachments" widget="many2many_binary_multi_files" nolabel="1"/>
                         </page>
                     </notebook>
                 </sheet>
-            </form>
-        </field>
-    </record>
-
-    <!-- List View for Electrical Socket Line (separate record) -->
-    <record id="view_electrical_socket_line_list" model="ir.ui.view">
-        <field name="name">electrical.socket.line.list</field>
-        <field name="model">electrical.socket.line</field>
-        <field name="arch" type="xml">
-            <list editable="bottom">
-                <field name="room_name"/>
-                <field name="socket_style"/>
-                <field name="height_from_floor"/>
-                <field name="mount_type"/>
-                <field name="flooring_type"/>
-                <field name="flooring_other" invisible="flooring_type != 'other'"/>
-                <field name="wall_type"/>
-                <field name="gangs"/>
-                <field name="socket_comments"/>
-            </list>
-        </field>
-    </record>
-
-    <!-- Form View for Electrical Socket Line (separate record) -->
-    <record id="view_electrical_socket_line_form" model="ir.ui.view">
-        <field name="name">electrical.socket.line.form</field>
-        <field name="model">electrical.socket.line</field>
-        <field name="arch" type="xml">
-            <form>
-                <group>
-                    <field name="room_name"/>
-                    <field name="socket_style"/>
-                    <field name="height_from_floor"/>
-                    <field name="mount_type"/>
-                    <field name="flooring_type"/>
-                    <field name="flooring_other" invisible="flooring_type != 'other'"/>
-                    <field name="wall_type"/>
-                    <field name="gangs"/>
-                    <field name="socket_comments"/>
-                </group>
-                <notebook>
-                    <page string="Location Attachments">
-                        <field name="location_attachments" widget="many2many_binary_multi_files"/>
-                    </page>
-                    <page string="Route Attachments">
-                        <field name="route_attachments" widget="many2many_binary_multi_files"/>
-                    </page>
-                </notebook>
             </form>
         </field>
     </record>
@@ -108,12 +28,9 @@
         <field name="model">electrical.job.request</field>
         <field name="arch" type="xml">
             <list string="Electrical Job Requests">
-                <field name="first_name"/>
-                <field name="email"/>
-                <field name="mobile"/>
-                <field name="postcode"/>
                 <field name="job_type"/>
                 <field name="crm_lead_id"/>
+                <field name="is_partial"/>
             </list>
         </field>
     </record>

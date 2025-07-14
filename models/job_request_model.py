@@ -1,15 +1,23 @@
-# models/job_request_model.py
+# electrical_job_request/models/job_request_model.py
+
 from odoo import models, fields, api, _
-from odoo.exceptions import ValidationError
+from odoo.fields import Datetime
+from dateutil.relativedelta import relativedelta
+import json
+import uuid
+from odoo.exceptions import ValidationError  # For constraint error
+
+class CrmLead(models.Model):
+    _inherit = 'crm.lead'
+
+    job_request_ids = fields.One2many('electrical.job.request', 'crm_lead_id', string='Job Requests')
 
 class ElectricalJobRequest(models.Model):
     _name = 'electrical.job.request'
     _description = 'Electrical Job Request'
 
-    first_name = fields.Char(string='First Name')
-    email = fields.Char(string='Email')
-    mobile = fields.Char(string='Mobile')
-    postcode = fields.Char(string='Postcode')
+    name = fields.Char(string='Name', compute='_compute_name', store=True)  # Added: Computed name for UI (medium: Improves list views/search)
+    crm_lead_id = fields.Many2one('crm.lead', string='CRM Lead', index=True, required=False)  # Change: required=False (high: Allows partials without lead)
     job_type = fields.Selection([
         ('new_socket', 'New Socket Installation'),
         ('additional_circuit', 'Additional Circuit Installation'),
@@ -47,91 +55,49 @@ class ElectricalJobRequest(models.Model):
         ('access_control', 'Access Control & Door Entry'),
         ('cctv', 'CCTV & Security Systems'),
         ('automated_gates', 'Automated Gates & Barriers'),
-    ], string='Job Type')
-    customer_notes = fields.Text(string='Additional Notes')
-    crm_lead_id = fields.Many2one('crm.lead', string='CRM Lead')
-    property_type = fields.Selection([('house', 'House'), ('flat', 'Flat/Apartment'), ('other', 'Other')], string='Property Type')
-    property_age = fields.Selection([('pre1950', 'Before 1950'), ('1950-1980', '1950-1980'), ('post1980', 'After 1980'), ('unknown', 'Not Sure')], string='Property Age')
-    attic_access = fields.Selection([('yes', 'Yes'), ('no', 'No'), ('unknown', 'Not Sure')], string='Loft Access Available?')
-    panel_type = fields.Selection([('breakers', 'Modern (Circuit Breakers)'), ('fuses', 'Older (Fuses)'), ('unknown', 'Not Sure')], string='Panel Type')
-    recent_upgrades = fields.Char(string='Recent Electrical Upgrades')
-    fuse_board_attachment_id = fields.Many2one('ir.attachment', string='Fuse Board Photo')
-    water_bond = fields.Selection([('yes', 'Yes'), ('no', 'No'), ('unknown', 'Not Sure')], string='Water Bond Present?')
-    water_bond_location = fields.Char(string='Water Bond Location')
-    water_bond_attachment_id = fields.Many2one('ir.attachment', string='Water Bond Photo')
-    gas_bond = fields.Selection([('yes', 'Yes'), ('no', 'No'), ('unknown', 'Not Sure')], string='Gas Bond Present?')
-    gas_bond_location = fields.Char(string='Gas Bond Location')
-    gas_bond_attachment_id = fields.Many2one('ir.attachment', string='Gas Bond Photo')
-    oil_bond = fields.Selection([('yes', 'Yes'), ('no', 'No'), ('unknown', 'Not Sure')], string='Oil Bond Present?')
-    oil_bond_location = fields.Char(string='Oil Bond Location')
-    oil_bond_attachment_id = fields.Many2one('ir.attachment', string='Oil Bond Photo')
-    other_services = fields.Selection([('yes', 'Yes'), ('no', 'No'), ('unknown', 'Not Sure')], string='Other Buried Services or Steel Work?')
-    other_services_desc = fields.Text(string='Other Services Description')
-    other_services_attachment_id = fields.Many2one('ir.attachment', string='Other Services Photo')
-    socket_lines = fields.One2many('electrical.socket.line', 'request_id', string='Socket Details')
+    ], string='Job Type', required=False, tracking=True)  # Added tracking (low: Logs changes for mail/activity)
+    
+    # All details in JSON (notes now in relevant sections, e.g., misc.comments)
+    job_specifics = fields.Text(string='Job Specifics', help='JSON for all form-collected details')
+    
+    # Attachments M2M (referenced in JSON)
     attachments = fields.Many2many('ir.attachment', string='Attachments')
-    # Placeholder fields from JS/controller
-    socket_quantity = fields.Integer(string='Socket Quantity')
-    appliance_type = fields.Char(string='Appliance Type')
-    outbuilding_type = fields.Selection([('shed', 'Shed'), ('garage', 'Garage')], string='Outbuilding Type')
-    ev_power_rating = fields.Char(string='EV Power Rating')
-    light_location = fields.Selection([('indoor', 'Indoor'), ('outdoor', 'Outdoor')], string='Light Location')
-    downlights_count = fields.Integer(string='Downlights Count')
-    smart_compatibility = fields.Char(string='Smart Compatibility')
-    motion_sensor = fields.Selection([('yes', 'Yes'), ('no', 'No')], string='Motion Sensor')
-    dimmer_count = fields.Integer(string='Dimmer Count')
-    current_unit_type = fields.Char(string='Current Unit Type')
-    rccb_circuit = fields.Char(string='RCCB Circuit')
-    surge_scope = fields.Selection([('whole', 'Whole House'), ('specific', 'Specific Devices')], string='Surge Scope')
-    property_size = fields.Char(string='Property Size')
-    alarms_count = fields.Integer(string='Alarms Count')
-    bonding_status = fields.Char(string='Bonding Status')
-    last_test_date = fields.Date(string='Last Test Date')
-    emergency_type = fields.Selection([('commercial', 'Commercial'), ('residential', 'Residential')], string='Emergency Type')
-    rooms_count = fields.Integer(string='Rooms Count')
-    partial_rooms = fields.Char(string='Partial Rooms')
-    trunking_length = fields.Float(string='Trunking Length')
-    facility_size = fields.Char(string='Facility Size')
-    minor_description = fields.Text(string='Minor Description')
-    fault_symptoms = fields.Text(string='Fault Symptoms')
-    cable_type = fields.Char(string='Cable Type')
-    ethernet_points = fields.Integer(string='Ethernet Points')
-    coverage_area = fields.Char(string='Coverage Area')
-    shower_power = fields.Char(string='Shower Power')
-    heating_area = fields.Float(string='Heating Area')
-    thermostat_type = fields.Char(string='Thermostat Type')
-    integration_platform = fields.Char(string='Integration Platform')
-    hub_brand = fields.Char(string='Hub Brand')
-    knx_devices = fields.Integer(string='KNX Devices')
-    panel_location = fields.Char(string='Panel Location')
-    doors_count = fields.Integer(string='Doors Count')
-    cameras_count = fields.Integer(string='Cameras Count')
-    gate_type = fields.Char(string='Gate Type')
-    lighting_bonding = fields.Char(string='Lighting Bonding')
-    smart_systems = fields.Char(string='Smart Systems')
-    ceiling_type = fields.Char(string='Ceiling Type')
 
-class ElectricalSocketLine(models.Model):
-    _name = 'electrical.socket.line'
-    _description = 'Electrical Socket Line'
+    # Resume features
+    resume_code = fields.Char(string='Resume Code', index=True, copy=False, help='Code for resuming partial submissions')
+    is_partial = fields.Boolean(string='Is Partial', default=True, help='Flag for incomplete submissions')
 
-    request_id = fields.Many2one('electrical.job.request', string='Job Request')
-    room_name = fields.Char(string='Room Name')
-    socket_style = fields.Selection([('standard', 'Standard'), ('usb', 'USB Integrated'), ('smart', 'Smart Socket')], string='Socket Style')
-    height_from_floor = fields.Float(string='Height from Floor (m)')
-    mount_type = fields.Selection([('surface', 'Surface (on wall)'), ('flush', 'Flush (in wall)')], string='Mount Type')
-    flooring_type = fields.Selection([('carpet', 'Carpet'), ('laminate', 'Laminate'), ('tile', 'Tile'), ('wood', 'Wood'), ('other', 'Other')], string='Flooring Type')
-    flooring_other = fields.Char(string='Other Flooring')
-    wall_type = fields.Selection([('plasterboard', 'Plasterboard/Drywall'), ('brick', 'Brick/Concrete'), ('tiled', 'Tiled Wall'), ('glass_splashback', 'Glass Splashback'), ('metal_splashback', 'Metal Splashback'), ('cladding', 'Cladding'), ('other', 'Other/Not Sure')], string='Wall Type')
-    gangs = fields.Selection([('single', 'Single'), ('double', 'Double'), ('triple', 'Triple')], string='Number of Gangs')
-    socket_comments = fields.Text(string='Additional Comments')
-    location_attachments = fields.Many2many('ir.attachment', 'socket_location_attachment_rel', 'socket_id', 'attachment_id', string='Location Attachments')
-    route_attachments = fields.Many2many('ir.attachment', 'socket_route_attachment_rel', 'socket_id', 'attachment_id', string='Route Attachments')
+    @api.depends('job_type', 'crm_lead_id')
+    def _compute_name(self):
+        for record in self:
+            if record.crm_lead_id:
+                record.name = f"Job Request {record.job_type} for Lead {record.crm_lead_id.name}"
+            else:
+                record.name = f"Partial Job Request {record.job_type or 'Untitled'}"
 
+    def generate_resume_code(self):
+        return str(uuid.uuid4())[:8].upper()  # Change: Instance method (why: Called on record, e.g., job_request.generate_resume_code())
 
+    @api.constrains('resume_code')
+    def _check_unique_resume_code(self):
+        for record in self:
+            if record.resume_code and self.search_count([('resume_code', '=', record.resume_code), ('id', '!=', record.id)]) > 0:
+                raise ValidationError(_('Resume code must be unique.'))
 
+    @api.constrains('job_specifics')
+    def _check_json_valid(self):
+        for record in self:
+            if record.job_specifics:
+                try:
+                    json.loads(record.job_specifics)
+                except ValueError:
+                    raise ValidationError(_('Job specifics must be valid JSON.'))
+
+    @api.model
+    def _cron_expire_partials(self):
+        expired = self.search([('is_partial', '=', True), ('create_date', '<', Datetime.now() - relativedelta(days=7))])
+        expired.unlink()  # Or archive
 
 class Attachment(models.Model):
     _inherit = 'ir.attachment'
-
-    s3_key = fields.Char(string='S3 Key', help='Key of the file in S3 storage')
+    s3_key = fields.Char(string='S3 Key', index=True)  # Added index (low: If searching by key—speeds queries)
