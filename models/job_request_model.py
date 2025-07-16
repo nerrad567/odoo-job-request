@@ -1,4 +1,4 @@
-# electrical_job_request/models/job_request_model.py
+# odoo_job_request/models/job_request_model.py
 
 from odoo import models, fields, api, _
 from odoo.fields import Datetime
@@ -10,11 +10,11 @@ from odoo.exceptions import ValidationError  # For constraint error
 class CrmLead(models.Model):
     _inherit = 'crm.lead'
 
-    job_request_ids = fields.One2many('electrical.job.request', 'crm_lead_id', string='Job Requests')
+    job_request_ids = fields.One2many('odoo_job_request.job_request', 'crm_lead_id', string='Job Requests')
 
-class ElectricalJobRequest(models.Model):
-    _name = 'electrical.job.request'
-    _description = 'Electrical Job Request'
+class JobRequest(models.Model):
+    _name = 'odoo_job_request.job_request'
+    _description = 'Job Request'
 
     name = fields.Char(string='Name', compute='_compute_name', store=True)  # Added: Computed name for UI (medium: Improves list views/search)
     crm_lead_id = fields.Many2one('crm.lead', string='CRM Lead', index=True, required=False)  # Change: required=False (high: Allows partials without lead)
@@ -55,7 +55,7 @@ class ElectricalJobRequest(models.Model):
         ('access_control', 'Access Control & Door Entry'),
         ('cctv', 'CCTV & Security Systems'),
         ('automated_gates', 'Automated Gates & Barriers'),
-    ], string='Job Type', required=False, tracking=True)  # Added tracking (low: Logs changes for mail/activity)
+    ], string='Job Type', required=False) 
     
     # All details in JSON (notes now in relevant sections, e.g., misc.comments)
     job_specifics = fields.Text(string='Job Specifics', help='JSON for all form-collected details')

@@ -1,4 +1,4 @@
-# electrical_job_request/controllers/job_request_controller.py
+# odoo_job_request/controllers/job_request_controller.py
 # High-level purpose: Manages API endpoints for the public job request form: S3 presigned URLs for direct uploads, form rendering, partial save/resume for user convenience, attachment deletion during resume, and full submission with JSON building/CRM integration. Uses JSON responses for AJAX (no reloads), public auth with sudo for safe DB access, and logging for errors. Changes: Focused on JSON from form data, attachment embedding, resume isolation (no early lead), minimal validation (JS primary). Optimizations: Shared _process_form_data for partial/submit (duplication reduced); conditional job_type (process only relevant—O(1) ifs); optional S3 delete (saves calls if disabled); early returns for errors (saves processing). No mistakes found—syntax/logic sound (checked via tool). Missed: Job_type update in resume branch of submit (added to handle changes); custom error messages (updated for user-friendliness with contact). Overall efficient: Short circuits, no unnecessary loops/queries; CAPTCHA recommended for abuse (add verify in routes if needed).
 
 from odoo import http
@@ -35,12 +35,12 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
             if is_list:
                 new_atts = []
                 for att_meta in att_data:
-                    att = self._create_attachment(att_meta, 'electrical.job.request', res_id)
+                    att = self._create_attachment(att_meta, 'odoo_job_request.job_request', res_id)
                     new_atts.append({'id': att.id, 'name': att.name, 's3_key': att.s3_key})
                     attachment_ids.append(att.id)
                 current[att_key] = new_atts
             else:  # Single att
-                att = self._create_attachment(att_data, 'electrical.job.request', res_id)
+                att = self._create_attachment(att_data, 'odoo_job_request.job_request', res_id)
                 current[att_key] = {'id': att.id, 'name': att.name, 's3_key': att.s3_key}
                 attachment_ids.append(att.id)
 
@@ -174,19 +174,18 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
         return job_specific, attachment_ids
 
     def _get_s3_client(self):
-        """Initialize S3 client for Hetzner Object Storage."""
-        if not hasattr(self, '_s3_client'):  # Cache per request (medium priority: Saves recreating on multiple calls, e.g., multi-attachments; why: Credentials fetch/init cheap, but caching eliminates redundancy—no perf hit)
-            access_key = request.env['ir.config_parameter'].sudo().get_param('hetzner_access_key_id')
-            secret_key = request.env['ir.config_parameter'].sudo().get_param('hetzner_secret_access_key')
-            region = request.env['ir.config_parameter'].sudo().get_param('hetzner_region', 'fsn1')
+        if not hasattr(self, '_s3_client'):
+            access_key = request.env['ir.config_parameter'].sudo().get_param('backblaze_access_key_id')  # New param for B2 key ID
+            secret_key = request.env['ir.config_parameter'].sudo().get_param('backblaze_secret_access_key')  # New param for B2 app key
+            endpoint = request.env['ir.config_parameter'].sudo().get_param('backblaze_endpoint', 'https://s3.eu-central-003.backblazeb2.com')  # From B2 console
             if not access_key or not secret_key:
-                raise ValueError('Hetzner S3 credentials not configured.')
+                raise ValueError('Backblaze B2 credentials not configured.')
             self._s3_client = boto3.client(
                 's3',
                 aws_access_key_id=access_key,
                 aws_secret_access_key=secret_key,
-                endpoint_url=f'https://{region}.your-objectstorage.com',
-                config=Config(signature_version='s3v4')
+                endpoint_url=endpoint,
+                config=Config(signature_version='s3v4')  # Required for presigned URLs
             )
         return self._s3_client
 
@@ -230,7 +229,7 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
         """Generate presigned URL for direct S3 upload. (Unchanged: Called by JS for file uploads; generates temporary URL for client-side S3 put. Why: Enables secure, direct uploads without server relay, reducing load. Optimization: Unique s3_key per upload—avoids collisions; short expiry for security.)"""
         try:
             s3 = self._get_s3_client()
-            bucket = request.env['ir.config_parameter'].sudo().get_param('hetzner_bucket', 'electrical-job-portal-fsn1')
+            bucket = request.env['ir.config_parameter'].sudo().get_param('backblaze_bucket', 'odoo-job-portal-fsn1')
             unique_id = str(uuid.uuid4())
             file_ext = '.' + file_name.split('.')[-1] if '.' in file_name else ''
             s3_key = f"job-requests/{unique_id}{file_ext}"
@@ -265,13 +264,13 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
         resume_code = kwargs.get('resume_code')  # Check URL param (why: If present, e.g., ?resume_code=ABC123, enable auto-resume)
         if resume_code:
             values['resume_code'] = resume_code  # Pass to template (why: JS can read and call /resume automatically on load)
-        return request.render('electrical_job_request.job_request_form', values)  # Render with context (why: Template accesses values.resume_code)        
+        return request.render('odoo_job_request.job_request_form', values)  # Render with context (why: Template accesses values.resume_code)        
         
     @http.route('/job-request/resume', type='json', auth='public', website=True, methods=['POST'], csrf=False)
     def resume(self, code):
         """Load partial data by code for form pre-fill. (Unchanged: Returns from JSON only—no lead. Why: Matches partial isolation; JS pre-fills basics from JSON if stored. Called by JS on code entry. Optimization: Limit=1 for fast search; early expiry unlink to clean DB.)"""
         try:
-            job_request = request.env['electrical.job.request'].sudo().search([('resume_code', '=', code), ('is_partial', '=', True)], limit=1)
+            job_request = request.env['odoo_job_request.job_request'].sudo().search([('resume_code', '=', code), ('is_partial', '=', True)], limit=1)
             if not job_request:
                 return {'status': 'error', 'message': 'Invalid or expired code.'}
 
@@ -297,7 +296,7 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
             attachments = request.env['ir.attachment'].sudo().browse(attachment_ids).filtered(lambda a: a.exists())  # Filter existing (why: Skip invalid, avoid errors)
 
             # Security: Limit to partial job_request attachments (why: Public route—prevent arbitrary deletes; check res_model/res_id/is_partial)
-            attachments = attachments.filtered(lambda a: a.res_model == 'electrical.job.request' and a.res_id and request.env['electrical.job.request'].sudo().browse(a.res_id).is_partial)
+            attachments = attachments.filtered(lambda a: a.res_model == 'odoo_job_request.job_request' and a.res_id and request.env['odoo_job_request.job_request'].sudo().browse(a.res_id).is_partial)
 
             if not attachments:
                 return {'status': 'error', 'message': 'No valid attachments found to delete.'}
@@ -306,7 +305,7 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
             delete_s3 = request.env['ir.config_parameter'].sudo().get_param('delete_s3_on_unlink', False)
             if delete_s3:
                 s3 = self._get_s3_client()
-                bucket = request.env['ir.config_parameter'].sudo().get_param('hetzner_bucket', 'electrical-job-portal-fsn1')
+                bucket = request.env['ir.config_parameter'].sudo().get_param('backblaze_bucket', 'odoo-job-portal-fsn1')
                 for att in attachments:
                     if att.s3_key:
                         s3.delete_object(Bucket=bucket, Key=att.s3_key)  # Cleanup S3 (loop for batch; why: Efficient in one route call)
@@ -331,7 +330,7 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
                 'job_specifics': json.dumps(job_specific),
                 'is_partial': True,
             }
-            job_request = request.env['electrical.job.request'].sudo().create(job_request_vals)  # Create (why: Standalone partial)
+            job_request = request.env['odoo_job_request.job_request'].sudo().create(job_request_vals)  # Create (why: Standalone partial)
             job_request.sudo().write({'attachments': [(6, 0, attachment_ids)]})  # Link (why: M2M for attachments)
 
             code = job_request.generate_resume_code()  # Generate (why: Unique for resume)
@@ -355,7 +354,7 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
 
             # Create lead on submit
             lead_vals = {
-                'name': f"Electrical Job Request - {first_name or 'Anonymous'}",
+                'name': f"Job Request - {first_name or 'Anonymous'}",
                 'partner_name': first_name,
                 'email_from': email,
                 'phone': mobile,
@@ -367,7 +366,7 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
             job_request = None
             attachment_ids = []  
             if 'resume_code' in data:
-                job_request = request.env['electrical.job.request'].sudo().search([('resume_code', '=', data['resume_code']), ('is_partial', '=', True)], limit=1)
+                job_request = request.env['odoo_job_request.job_request'].sudo().search([('resume_code', '=', data['resume_code']), ('is_partial', '=', True)], limit=1)
                 if not job_request:
                     return {'status': 'error', 'message': 'Invalid resume code.'}
                 # Update partial with lead
@@ -375,7 +374,7 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
                 attachment_ids = job_request.attachments.ids.copy()  # Preserve old attachments on resume (medium priority: Start with existing IDs from partial; why: If JS doesn't send old metadata, keep them—robustness vs JS bug; copy() to avoid mutating original)
             else:
                 # New job request
-                job_request = request.env['electrical.job.request'].sudo().create({'crm_lead_id': lead.id, 'job_type': job_type})
+                job_request = request.env['odoo_job_request.job_request'].sudo().create({'crm_lead_id': lead.id, 'job_type': job_type})
 
             # Process form data using helper
             job_specific, new_attachment_ids = self._process_form_data(data, job_request.id)  # Call helper (note: Rename var to new_attachment_ids for clarity—append below)

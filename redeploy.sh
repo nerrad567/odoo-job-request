@@ -5,11 +5,11 @@
 set -euo pipefail
 
 # ───────── CONFIG ─────────
-MODULE="electrical_job_request"               # default target; override with --module
-DB="odoo5"
-ODOO_CONT="odoo18-docker-odoo-1"
-PGHOST="postgres"; PGPORT=5432; PGPASS="odoo"
-COMPOSE_FILE="$HOME/odoo18-docker/docker-compose.yml"
+MODULE="odoo_job_request"               # default target; override with --module
+DB="odoo"
+ODOO_CONT="odoo-dev"
+PGHOST="postgres-dev"; PGPORT=5432; PGPASS="odoo"
+COMPOSE_FILE="$HOME/odoo-dev/docker-compose.yml"
 LOGLEVEL="debug"
 # ──────────────────────────
 
