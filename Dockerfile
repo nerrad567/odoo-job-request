@@ -1,17 +1,21 @@
 FROM odoo:latest
 
 USER root
+
+# Install system packages and configure locale
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    openjdk-17-jre \
-    && pip3 install jingtrang boto3==1.35.24 --break-system-packages \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    locales \
+    python3-pip \
+ && echo "en_GB.UTF-8 UTF-8" > /etc/locale.gen \
+ && locale-gen \
+ && update-locale LANG=en_GB.UTF-8 \
+ && pip3 install boto3 --break-system-packages \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
 
-# Copy custom configuration and addons
-COPY ./config/odoo.conf /etc/odoo/odoo.conf
-COPY ./addons /mnt/extra-addons
-
-# Set permissions for Odoo user
-RUN chown -R odoo:odoo /etc/odoo /mnt/extra-addons
+# Set environment variables
+ENV LANG=en_GB.UTF-8 \
+    LANGUAGE=en_GB:en \
+    LC_ALL=en_GB.UTF-8
 
 USER odoo

@@ -28,7 +28,7 @@
         <field name="model">odoo_job_request.job_request</field>
         <field name="arch" type="xml">
             <list string="Job Requests">
-                <field name="job_type"/>
+                <field name="job_type" widget="selection"/>
                 <field name="crm_lead_id"/>
                 <field name="is_partial"/>
             </list>
@@ -75,7 +75,7 @@
                 }
             </style>
             <div class="container mt-4">
-                <div id="job_request_form"/>
+                <div id="job_request_form"></div>
             </div>
         </t>
     </template>

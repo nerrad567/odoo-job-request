@@ -17,10 +17,11 @@
     ],
     "assets": {
         "web.assets_frontend": [
-            "odoo_job_request/static/src/js/validation_utils.js",
-            "odoo_job_request/static/src/js/file_utils.js",
-            "odoo_job_request/static/src/js/form_steps.js",
-            "odoo_job_request/static/src/js/job_request_form.js",
+            "odoo_job_request/static/src/js/templates/form_steps.xml.js",
+            "odoo_job_request/static/src/js/utils/validation_utils.js",
+            "odoo_job_request/static/src/js/utils/file_utils.js",
+            "odoo_job_request/static/src/js/constants.js",
+            "odoo_job_request/static/src/js/components/JobRequestForm.js",
         ],
     },
     "installable": True,

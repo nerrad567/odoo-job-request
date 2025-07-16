@@ -44,6 +44,8 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
                 current[att_key] = {'id': att.id, 'name': att.name, 's3_key': att.s3_key}
                 attachment_ids.append(att.id)
 
+
+
         # Base sections (always populate; efficient as fixed, data.get ignores missing)
         # Property details
         job_specific['property_details'] = {
@@ -56,7 +58,9 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
             'asbestos_details_comments': data.get('asbestos_details_comments', ''),
             'identified_hazards': data.get('identified_hazards', []),
             'existing_infrastructure_issues': data.get('existing_infrastructure_issues', ''),
-            'comments': data.get('property_comments', '')
+            'comments': data.get('property_comments', ''),
+            'site_assessment_attachments': data.get('site_assessment_attachments', [])
+            
         }
         # Property attachments (use helper; keys=['property_details'], att_key='site_assessment_attachments', is_list=True)
         _embed_att(job_specific, ['property_details'], 'site_assessment_attachments', is_list=True)
@@ -66,7 +70,10 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
             'electrical_panel_type': data.get('electrical_panel_type', ''),
             'recent_electrical_upgrades': data.get('recent_electrical_upgrades', ''),
             'supply_type': data.get('supply_type', ''),
-            'comments': data.get('power_supply_comments', '')
+            'comments': data.get('power_supply_comments', ''),
+            'fuse_board_photo_attachment': data.get('fuse_board_photo_attachment', None),
+            'meter_photo_attachment': data.get('meter_photo_attachment', None),
+            'rec_fuse_photo_attachment': data.get('rec_fuse_photo_attachment', None)
         }
         # Power attachments (use helper for each single; keys=['power_supply_characteristics'], att_key='fuse_board_photo_attachment', is_list=False)
         _embed_att(job_specific, ['power_supply_characteristics'], 'fuse_board_photo_attachment')
@@ -76,24 +83,28 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
         # Bonding details (populate content per sub-type)
         job_specific['bonding_details'] = {
             'water_bonding': {
-                'is_present': data.get('water_is_present', False),
+                'is_present': data.get('water_is_present', 'unknown'),
                 'installation_location': data.get('water_installation_location', ''),
-                'comments': data.get('water_comments', '')
+                'comments': data.get('water_comments', ''),
+                'photo_attachment': data.get('water_photo_attachment', None)
             },
             'gas_bonding': {
-                'is_present': data.get('gas_is_present', False),
+                'is_present': data.get('gas_is_present', 'unknown'),
                 'installation_location': data.get('gas_installation_location', ''),
-                'comments': data.get('gas_comments', '')
+                'comments': data.get('gas_comments', ''),
+                'photo_attachment': data.get('gas_photo_attachment', None)
             },
             'oil_bonding': {
                 'is_present': data.get('oil_is_present', 'unknown'),
                 'installation_location': data.get('oil_installation_location', ''),
-                'comments': data.get('oil_comments', '')
+                'comments': data.get('oil_comments', ''),
+                'photo_attachment': data.get('oil_photo_attachment', None)
             },
             'other_buried_services': {
-                'is_present': data.get('other_services_is_present', False),
+                'is_present': data.get('other_services_is_present', 'unknown'),
                 'description': data.get('other_services_description', ''),
-                'comments': data.get('other_services_comments', '')
+                'comments': data.get('other_services_comments', ''),
+                'photo_attachment': data.get('other_photo_attachment', None)
             }
         }
         # Bonding attachments (use helper for each single; keys=['bonding_details', 'water_bonding'], att_key='photo_attachment')
@@ -125,18 +136,6 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
         if data.get('job_type') == 'new_socket':
             job_specific['job_specific_details']['new_socket_installations'] = data.get('new_socket_installations', [])
             for socket in job_specific['job_specific_details']['new_socket_installations']:
-                # Populate content (from data)
-                socket['room_name'] = data.get('room_name', '')  # Assume per-item data; adjust if JS sends structured
-                socket['socket_style'] = data.get('socket_style', '')
-                socket['installation_height_from_floor'] = data.get('installation_height_from_floor', 0.0)
-                socket['mount_type'] = data.get('mount_type', '')
-                socket['flooring_type'] = data.get('flooring_type', '')
-                socket['flooring_other_description'] = data.get('flooring_other_description', '')
-                socket['wall_type'] = data.get('wall_type', '')
-                socket['number_of_gangs'] = data.get('number_of_gangs', '')
-                socket['estimated_usage'] = data.get('estimated_usage', '')
-                socket['comments'] = data.get('comments', '')
-
                 # Embed location attachments (use helper; keys=[], att_key='location_photo_attachments', is_list=True—socket is current dict)
                 _embed_att(socket, [], 'location_photo_attachments', is_list=True)
                 _embed_att(socket, [], 'route_photo_or_video_attachments', is_list=True)
@@ -145,7 +144,8 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
             job_specific['job_specific_details']['ev_charger_installation'] = {
              'power_rating': data.get('power_rating', ''),
              'installation_location': data.get('installation_location', ''),
-             'comments': data.get('comments', '')
+             'comments': data.get('ev_comments', ''),
+             'attachments': data.get('ev_attachments', [])
          }
         _embed_att(job_specific, ['job_specific_details', 'ev_charger_installation'], 'attachments', is_list=True)
 
@@ -163,7 +163,9 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
         job_specific['misc'] = {
             'additional_notes': data.get('additional_notes', ''),
             'future_key': data.get('future_key', ''),
-            'comments': data.get('misc_comments', '')
+            'comments': data.get('misc_comments', ''),
+            'general_site_video_attachments': data.get('general_site_video_attachments', []),  # Add this
+            'unknown_attachment': data.get('unknown_attachment', None)
         }
         _embed_att(job_specific, ['misc'], 'general_site_video_attachments', is_list=True)
         _embed_att(job_specific, ['misc'], 'unknown_attachment')
@@ -194,6 +196,11 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
         if isinstance(metadata, list):  # Batch mode (why: If list, create multiple in one env.create—O(1) call vs n)
             att_vals_list = []
             for meta in metadata:
+                if 'id' in meta:  # Reuse existing if id matches
+                    att = request.env['ir.attachment'].sudo().browse(meta['id'])
+                    if att.exists() and att.s3_key == meta.get('s3_key'):
+                        return att  # For batch, collect and return list
+                # Else build new vals 
                 att_vals = {
                     'name': meta.get('name', ''),
                     'res_model': res_model,
@@ -210,6 +217,10 @@ class JobRequestController(http.Controller):  # Groups routes (why: Odoo standar
                 att.sudo().write({'url': f'/attachments/download/{att.id}'})  # Update URLs (why: Post-create as create doesn't support computed)
             return attachments  # Return records list (why: Caller can append ids/metadata)
         else:  # Single mode (original; why: Backward-compatible for single dict calls)
+            if 'id' in metadata:
+                att = request.env['ir.attachment'].sudo().browse(metadata['id'])
+                if att.exists() and att.s3_key == metadata.get('s3_key'):
+                    return att        
             att_vals = {
                 'name': metadata.get('name', ''),
                 'res_model': res_model,
