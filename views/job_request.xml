@@ -1,55 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <!-- Form View for Job Request -->
-    <record id="view_job_request_form" model="ir.ui.view">
-        <field name="name">odoo_job_request.job_request_form</field>
-        <field name="model">odoo_job_request.job_request</field>
-        <field name="arch" type="xml">
-            <form string="Job Request">
-                <sheet>
-                    <group>
-                        <field name="crm_lead_id" domain="[('type', '=', 'lead')]"/>
-                        <field name="job_type"/>
-                        <field name="job_specifics" widget="text" readonly="1"/>
-                    </group>
-                    <notebook>
-                        <page string="Attachments">
-                            <field name="attachments" widget="many2many_binary_multi_files" nolabel="1"/>
-                        </page>
-                    </notebook>
-                </sheet>
-            </form>
-        </field>
-    </record>
-
-    <!-- List View for Job Request -->
-    <record id="view_job_request_tree" model="ir.ui.view">
-        <field name="name">odoo_job_request.job_request_list</field>
-        <field name="model">odoo_job_request.job_request</field>
-        <field name="arch" type="xml">
-            <list string="Job Requests">
-                <field name="job_type" widget="selection"/>
-                <field name="crm_lead_id"/>
-                <field name="is_partial"/>
-            </list>
-        </field>
-    </record>
-
-    <!-- Action for Job Request -->
-    <record id="action_job_request" model="ir.actions.act_window">
-        <field name="name">Job Requests</field>
-        <field name="res_model">odoo_job_request.job_request</field>
-        <field name="view_mode">list,form</field>
-        <field name="view_id" ref="view_job_request_tree"/>
-    </record>
-
-    <!-- Menu Item -->
-    <menuitem id="menu_job_request"
-              name="Job Requests"
-              parent="crm.crm_menu_root"
-              action="action_job_request"
-              sequence="10"/>
-
     <!-- Public Form Template -->
     <template id="job_request_form" name="Job Request Form">
         <t t-call="website.layout">

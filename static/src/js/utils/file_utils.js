@@ -1,5 +1,5 @@
 /** @odoo-module **/
-
+// static/src/js/utils/file_utils.js
 import { rpc } from "@web/core/network/rpc";
 
 async function getThumbnail(file) {
