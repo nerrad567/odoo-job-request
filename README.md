@@ -9,7 +9,7 @@ A custom Odoo 18 module that provides a **public-facing electrical job request f
 - ✅ Multi-step public job request form (OWL 2 + Bootstrap)
 - ✅ Dynamic socket data capture with per-socket details
 - ✅ File uploads (photos, PDFs, videos) linked to CRM leads
-- ✅ S3-based attachment storage (Hetzner-compatible)
+- ✅ S3-based attachment storage
 - ✅ Admin/staff views for structured job data in CRM
 - ✅ Bonding, property, and electrical metadata collection
 
@@ -29,7 +29,7 @@ A custom Odoo 18 module that provides a **public-facing electrical job request f
 - Odoo 18.0+
 - Python 3.10+
 - `boto3` (install with `pip install boto3`)
-- Hetzner object storage bucket + access key
+- object storage bucket + access key
 
 ---
 
@@ -39,10 +39,10 @@ Set the following `ir.config_parameter` keys in the database:
 
 | Key                          | Example                          |
 |-----------------------------|----------------------------------|
-| `hetzner_access_key_id`     | `AKIA...`                        |
-| `hetzner_secret_access_key` | `s3cr3t...`                      |
-| `hetzner_bucket`            | `electrical-job-portal-fsn1`     |
-| `hetzner_region`            | `fsn1`                           |
+| `access_key_id`     | `AKIA...`                        |
+| `secret_access_key` | `s3cr3t...`                      |
+| `bucket`            | `electrical-job-portal-fsn1`     |
+| `region`            | `fsn1`                           |
 
 These are typically injected via a post-deploy script or the Odoo UI (Settings → Technical → System Parameters).
 
